@@ -138,8 +138,6 @@ const App: React.FC = () => {
   };
 
   const sendEmail = async (orderNum: string): Promise<void> => {
-    if (!customerInfo.email) return;
-
     try {
       // Configurazione EmailJS (sostituisci con i tuoi dati)
       const serviceID = process.env.EMAILJS_SERVICE_ID!;
