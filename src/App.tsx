@@ -1,40 +1,63 @@
-import React, { useState } from 'react';
-import {ShoppingCart, Plus, Minus, Star, Users, Truck, Shield, Instagram, HandIcon, Banknote} from 'lucide-react';
-import { Product, CartItem } from './types';
-import './App.css';
+import React, {useState} from 'react';
+import {Banknote, Instagram, Minus, Plus, Shield, ShoppingCart, Users, ChevronLeft, ChevronRight, User, Phone, Mail, CheckCircle} from 'lucide-react';
+import {CartItem, CustomerInfo, Product} from "./types";
+
 
 const App: React.FC = () => {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [isCartOpen, setIsCartOpen] = useState<boolean>(false);
-  const [selectedSize, setSelectedSize] = useState<string | null>(null);
+  const [selectedSizes, setSelectedSizes] = useState<{[key: number]: string}>({});
+  const [currentImageIndex, setCurrentImageIndex] = useState<{[key: number]: number}>({});
+  const [showCheckoutForm, setShowCheckoutForm] = useState<boolean>(false);
+  const [customerInfo, setCustomerInfo] = useState<CustomerInfo>({
+    nome: '',
+    cognome: '',
+    telefono: '',
+    email: ''
+  });
+  const [orderCompleted, setOrderCompleted] = useState<boolean>(false);
+  const [addedToCart, setAddedToCart] = useState<boolean>(false);
+  const [orderNumber, setOrderNumber] = useState<string>('');
+
   const products: Product[] = [
     {
       id: 1,
-      name: "Late Night Hoop Jersey",
-      price: 45.00,
-      image: "shirt1.jpeg",
-      sizes: ["S","M","L","XL"],
-      description: "Jersey premium da basket, perfetta per i tuoi allenamenti notturni"
+      name: "Late Night Hoop - White",
+      price: 15.00,
+      images: ["shirt_white_1_front.jpeg", "shirt_white_1_retro.jpeg"], // Aggiungi più immagini qui
+      sizes: ["S","M","L","XL","XXL"],
+      description: ""
     },
     {
       id: 2,
-      name: "Streetball Shorts",
-      price: 35.00,
-      image: "shirt2.jpeg",
-      sizes: ["S","M","L","XL"],
-      description: "Pantaloncini tecnici per il playground e la strada"
+      name: "Late Night Hoop - Black",
+      price: 15.00,
+      images: ["shirt_black_2_front.jpeg", "shirt_black_1_retro.jpeg"], // Aggiungi più immagini qui
+      sizes: ["S","M","L","XL","XXL"],
+      description: ""
+    },
+    {
+      id: 4,
+      name: "Late Night Hoop Arched - White",
+      price: 15.00,
+      images: ["shirt_white_2_front.jpeg", "shirt_white_1_retro.jpeg"], // Aggiungi più immagini qui
+      sizes: ["S","M","L","XL","XXL"],
+      description: ""
     },
     {
       id: 3,
-      name: "Hoop Dreams Hoodie",
-      price: 55.00,
-      image: "shirt3.jpeg",
-      sizes: ["S","M","L","XL"],
-      description: "Felpa con cappuccio, stile streetwear per veri ballers"
-    }
+      name: "Late Night Hoop Arched - Black",
+      price: 15.00,
+      images: ["shirt_black_1_front.jpeg", "shirt_black_1_retro.jpeg"], // Aggiungi più immagini qui
+      sizes: ["S","M","L","XL","XXL"],
+      description: ""
+    },
   ];
 
-  const addToCart = (product: Product, selectedSize: string): void => {
+  const addToCart = (product: Product): void => {
+    const selectedSize = selectedSizes[product.id];
+    if (!selectedSize) return;
+
     const existingItem = cart.find(
         item => item.id === product.id && item.size === selectedSize
     );
@@ -48,13 +71,15 @@ const App: React.FC = () => {
     } else {
       setCart([...cart, { ...product, size: selectedSize, quantity: 1 }]);
     }
+    setAddedToCart(true)
+    setTimeout(() => {
+      setAddedToCart(false)
+    }, 2000);
   };
 
-
-
-  const updateQuantity = (id: number, change: number): void => {
+  const updateQuantity = (id: number, size: string, change: number): void => {
     setCart(cart.map(item => {
-      if (item.id === id) {
+      if (item.id === id && item.size === size) {
         const newQuantity = item.quantity + change;
         return newQuantity > 0 ? { ...item, quantity: newQuantity } : null;
       }
@@ -68,6 +93,122 @@ const App: React.FC = () => {
 
   const getTotalItems = (): number => {
     return cart.reduce((total, item) => total + item.quantity, 0);
+  };
+
+  const handleSizeSelection = (productId: number, size: string): void => {
+    setSelectedSizes(prev => ({
+      ...prev,
+      [productId]: size
+    }));
+  };
+
+  const nextImage = (productId: number, totalImages: number): void => {
+    setCurrentImageIndex(prev => ({
+      ...prev,
+      [productId]: ((prev[productId] || 0) + 1) % totalImages
+    }));
+  };
+
+  const prevImage = (productId: number, totalImages: number): void => {
+    setCurrentImageIndex(prev => ({
+      ...prev,
+      [productId]: ((prev[productId] || 0) - 1 + totalImages) % totalImages
+    }));
+  };
+
+  const getCurrentImageIndex = (productId: number): number => {
+    return currentImageIndex[productId] || 0;
+  };
+
+  const handleCustomerInfoChange = (field: keyof CustomerInfo, value: string): void => {
+    setCustomerInfo(prev => ({
+      ...prev,
+      [field]: value
+    }));
+  };
+
+  const isFormValid = (): boolean => {
+    return customerInfo.nome.trim() !== '' &&
+        customerInfo.cognome.trim() !== '' &&
+        customerInfo.telefono.trim() !== '';
+  };
+
+  const generateOrderNumber = (): string => {
+    return 'LNH' + Date.now().toString().slice(-6);
+  };
+
+  const sendEmail = async (orderNum: string): Promise<void> => {
+    if (!customerInfo.email) return;
+
+    try {
+      // Configurazione EmailJS (sostituisci con i tuoi dati)
+      const serviceID = 'service_7lcd0t2'; // Dal dashboard EmailJS
+      const templateID = 'template_3r2k30y'; // Dal dashboard EmailJS
+      const publicKey = 'qeOlzhTQkJ-vdAIIz'; // Dal dashboard EmailJS
+
+      const emailParams = {
+        to_name: `${customerInfo.nome} ${customerInfo.cognome}`,
+        to_email: customerInfo.email,
+        order_number: orderNum,
+        customer_name: customerInfo.nome,
+        customer_phone: customerInfo.telefono,
+        order_items: cart.map(item =>
+            `• ${item.name} (Taglia: ${item.size}) x${item.quantity} - €${(item.price * item.quantity).toFixed(2)}`
+        ).join('\n'),
+        total_price: getTotalPrice().toFixed(2),
+        company_name: 'Late Night Hoop'
+      };
+
+      // Invio email automatico (nascosto all'utente)
+      const response = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          service_id: serviceID,
+          template_id: templateID,
+          user_id: publicKey,
+          template_params: emailParams
+        })
+      });
+
+      if (response.ok) {
+        console.log('✅ Email inviata con successo a:', customerInfo.email);
+      } else {
+        console.error('❌ Errore invio email:', response.statusText);
+      }
+
+    } catch (error) {
+      console.error('❌ Errore EmailJS:', error);
+    }
+  };
+
+
+  const completeOrder = (): void => {
+    const newOrderNumber = generateOrderNumber();
+    setOrderNumber(newOrderNumber);
+
+    // Invia Email
+    sendEmail(newOrderNumber);
+
+    // Mostra conferma ordine
+    setOrderCompleted(true);
+    setShowCheckoutForm(false);
+    setIsCartOpen(false)
+
+    // Reset dopo 5 secondi
+    setTimeout(() => {
+      setOrderCompleted(false);
+      setCart([]);
+      setCustomerInfo({
+        nome: '',
+        cognome: '',
+        telefono: '',
+        email: ''
+      });
+      setIsCartOpen(false);
+    }, 5000);
   };
 
   return (
@@ -84,15 +225,13 @@ const App: React.FC = () => {
               </div>
               <button
                   onClick={() => setIsCartOpen(!isCartOpen)}
-                  className="relative bg-lime-400 text-black px-6 py-3 rounded-full font-bold hover:bg-lime-300 transition-all transform hover:scale-105"
+                  className="relative bg-lime-400 text-black p-2 rounded-full font-bold hover:bg-lime-300 transition-all transform hover:scale-105"
               >
-                <ShoppingCart className="inline-block mr-2" size={20} />
-                CARRELLO
-                {getTotalItems() > 0 && (
-                    <span className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold">
+                <ShoppingCart className="inline-block" size={20}/>
+                <span
+                    className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold">
                   {getTotalItems()}
                 </span>
-                )}
               </button>
             </div>
           </div>
@@ -112,8 +251,9 @@ const App: React.FC = () => {
                 Merchandising ufficiale per veri ballers. Stile streetball, qualità premium.
               </p>
               <div className="flex space-x-4">
-                <div className="flex items-center space-x-2 text-lime-400 hover:underline cursor-pointer" onClick={() => window.open("https://www.instagram.com/latenight_hoop/"," blank")}>
-                  <Instagram size={20} />
+                <div className="flex items-center space-x-2 text-lime-400 hover:underline cursor-pointer"
+                     onClick={() => window.open("https://www.instagram.com/latenight_hoop/", " blank")}>
+                  <Instagram size={20}/>
                   <span>Visitaci su Instagram</span>
                 </div>
               </div>
@@ -128,25 +268,29 @@ const App: React.FC = () => {
         <section className="py-8 bg-gray-900">
           <div className="container mx-auto px-4">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="flex items-center space-x-4 bg-black/50 p-6 rounded-lg border border-lime-400/20 hover:border-lime-400 transition-all transform hover:scale-105 hover:shadow-2xl hover:shadow-lime-400/20 cursor-pointer">
-                <Truck className="text-lime-400" size={32} />
+              <div
+                  className="flex items-center space-x-4 bg-black/50 p-6 rounded-lg border border-lime-400/20 hover:border-lime-400 transition-all transform hover:scale-105 hover:shadow-2xl hover:shadow-lime-400/20 cursor-pointer">
+                <Users className="text-lime-400" size={32}/>
                 <div>
-                  <h3 className="font-bold text-lime-400">Spedizione Gratuita</h3>
-                  <p className="text-gray-400">Su ordini superiori a €50</p>
+                  <h3 className="font-bold text-lime-400">Ritiro di Persona</h3>
+                  <p className="text-gray-400">Nessuna spedizione prevista</p>
                 </div>
               </div>
-              <div className="flex items-center space-x-4 bg-black/50 p-6 rounded-lg border border-lime-400/20 hover:border-lime-400 transition-all transform hover:scale-105 hover:shadow-2xl hover:shadow-lime-400/20 cursor-pointer">
-                <Shield className="text-lime-400" size={32} />
+              <div
+                  className="flex items-center space-x-4 bg-black/50 p-6 rounded-lg border border-lime-400/20 hover:border-lime-400 transition-all transform hover:scale-105 hover:shadow-2xl hover:shadow-lime-400/20 cursor-pointer">
+                <Shield className="text-lime-400" size={32}/>
                 <div>
                   <h3 className="font-bold text-lime-400">Garanzia Qualità</h3>
                   <p className="text-gray-400">30 giorni soddisfatti o rimborsati</p>
                 </div>
               </div>
-              <div className="flex items-center space-x-4 bg-black/50 p-6 rounded-lg border border-lime-400/20 hover:border-lime-400 transition-all transform hover:scale-105 hover:shadow-2xl hover:shadow-lime-400/20 cursor-pointer">
-                <Banknote  className="text-lime-400" size={32}/>
+              <div
+                  className="flex items-center space-x-4 bg-black/50 p-6 rounded-lg border border-lime-400/20 hover:border-lime-400 transition-all transform hover:scale-105 hover:shadow-2xl hover:shadow-lime-400/20 cursor-pointer">
+                <Banknote className="text-lime-400" size={32}/>
                 <div>
                   <h3 className="font-bold text-lime-400">Pagamento alla consegna</h3>
-                  <p className="text-gray-400">Non devi pagare nulla all'ordine</p>
+                  <p className="text-gray-400">Pagherai comodamente al momento del ritiro, senza alcun anticipo
+                    richiesto.</p>
                 </div>
               </div>
             </div>
@@ -161,6 +305,8 @@ const App: React.FC = () => {
             </h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
               {products.map(product => {
+                const currentIndex = getCurrentImageIndex(product.id);
+                const selectedSize = selectedSizes[product.id];
 
                 return (
                     <div
@@ -169,7 +315,7 @@ const App: React.FC = () => {
                     >
                       <div className="relative">
                         <img
-                            src={product.image}
+                            src={product.images[currentIndex]}
                             alt={product.name}
                             className="w-full h-[500px] object-cover"
                         />
@@ -177,6 +323,37 @@ const App: React.FC = () => {
                             className="absolute top-4 right-4 bg-lime-400 text-black px-2 py-1 rounded-full text-sm font-bold">
                           NEW
                         </div>
+
+                        {/* Slider Controls */}
+                        {product.images.length > 1 && (
+                            <>
+                              <button
+                                  onClick={() => prevImage(product.id, product.images.length)}
+                                  className="absolute left-2 top-1/2 transform -translate-y-1/2 bg-black/50 text-white p-2 rounded-full hover:bg-lime-400 transition-all"
+                              >
+                                <ChevronLeft size={20}/>
+                              </button>
+                              <button
+                                  onClick={() => nextImage(product.id, product.images.length)}
+                                  className="absolute right-2 top-1/2 transform -translate-y-1/2 bg-black/50 text-white p-2 rounded-full hover:bg-lime-400 transition-all"
+                              >
+                                <ChevronRight size={20}/>
+                              </button>
+
+                              {/* Dots Indicator */}
+                              <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex space-x-2">
+                                {product.images.map((_, index) => (
+                                    <button
+                                        key={index}
+                                        onClick={() => setCurrentImageIndex(prev => ({...prev, [product.id]: index}))}
+                                        className={`w-2 h-2 rounded-full transition-all ${
+                                            index === currentIndex ? 'bg-lime-400' : 'bg-black/50'
+                                        }`}
+                                    />
+                                ))}
+                              </div>
+                            </>
+                        )}
                       </div>
                       <div className="p-6">
                         <h3 className="text-xl font-bold mb-2 text-white">{product.name}</h3>
@@ -189,7 +366,7 @@ const App: React.FC = () => {
                             {product.sizes.map(size => (
                                 <button
                                     key={size}
-                                    onClick={() => setSelectedSize(size)}
+                                    onClick={() => handleSizeSelection(product.id, size)}
                                     className={`px-3 py-1 rounded-full border text-sm font-medium transition-all ${
                                         selectedSize === size
                                             ? "bg-lime-400 text-black border-lime-400"
@@ -208,7 +385,7 @@ const App: React.FC = () => {
                 </span>
                           <button
                               disabled={!selectedSize}
-                              onClick={() => selectedSize && addToCart(product, selectedSize)}
+                              onClick={() => addToCart(product)}
                               className={`px-6 py-2 rounded-full font-bold transform transition-all ${
                                   selectedSize
                                       ? "bg-lime-400 text-black hover:bg-lime-300 hover:scale-105"
@@ -225,7 +402,6 @@ const App: React.FC = () => {
             </div>
           </div>
         </section>
-
 
         {/* Cart Sidebar */}
         {isCartOpen && (
@@ -255,49 +431,130 @@ const App: React.FC = () => {
                       <>
                         {cart.map((item, index) => (
                             <div
-                                key={item.id}
+                                key={`${item.id}-${item.size}`}
                                 className={`flex items-center space-x-4 mb-4 p-4 bg-black rounded-lg border border-gray-700 transform transition-all duration-300 ease-out ${
                                     isCartOpen ? 'translate-x-0 opacity-100' : 'translate-x-full opacity-0'
                                 }`}
                                 style={{transitionDelay: `${index * 100}ms`}}
                             >
-                              <img src={item.image} alt={item.name} className="w-16 h-16 object-cover rounded"/>
+                              <img src={item.images[0]} alt={item.name} className="w-16 h-16 object-cover rounded"/>
                               <div className="flex-1">
                                 <h4 className="font-bold text-white text-sm">{item.name}</h4>
                                 <p className="text-sm text-gray-400">Taglia: {item.size}</p>
-
                                 <p className="text-lime-400 font-bold">€{item.price.toFixed(2)}</p>
                               </div>
                               <div className="flex items-center space-x-2">
                                 <button
-                                    onClick={() => updateQuantity(item.id, -1)}
+                                    onClick={() => updateQuantity(item.id, item.size, -1)}
                                     className="bg-red-500 text-white w-8 h-8 rounded-full flex items-center justify-center hover:bg-red-400 transition-colors duration-200 hover:scale-110 transform"
                                 >
                                   <Minus size={16}/>
                                 </button>
                                 <span className="w-8 text-center font-bold text-white">{item.quantity}</span>
                                 <button
-                                    onClick={() => updateQuantity(item.id, 1)}
+                                    onClick={() => updateQuantity(item.id, item.size, 1)}
                                     className="bg-lime-400 text-black w-8 h-8 rounded-full flex items-center justify-center hover:bg-lime-300 transition-colors duration-200 hover:scale-110 transform"
                                 >
-                                  <Plus size={16} />
+                                  <Plus size={16}/>
                                 </button>
                               </div>
                             </div>
                         ))}
 
-                        <div className={`border-t border-gray-700 pt-4 mt-6 transform transition-all duration-500 ease-out ${
-                            isCartOpen ? 'translate-x-0 opacity-100' : 'translate-x-full opacity-0'
-                        }`}
-                             style={{ transitionDelay: `${cart.length * 100 + 200}ms` }}
+                        <div
+                            className={`border-t border-gray-700 pt-4 mt-6 transform transition-all duration-500 ease-out ${
+                                isCartOpen ? 'translate-x-0 opacity-100' : 'translate-x-full opacity-0'
+                            }`}
+                            style={{transitionDelay: `${cart.length * 100 + 200}ms`}}
                         >
                           <div className="flex justify-between items-center mb-4">
-                            <span className="text-xl font-bold text-white">TOTALE:</span>
+                            <span className="text-xl font-bold text-[#00BFFF]">TOTALE:</span>
                             <span className="text-2xl font-black text-lime-400">€{getTotalPrice().toFixed(2)}</span>
                           </div>
-                          <button className="w-full bg-lime-400 text-black py-4 rounded-lg font-black text-lg hover:bg-lime-300 transition-all duration-200 transform hover:scale-105">
-                            PROCEDI AL CHECKOUT
-                          </button>
+
+                          <div className="bg-gray-800 p-3 rounded-lg mb-4 border border-lime-400/30">
+                            <p className="text-sm text-lime-400 font-bold">💵 PAGAMENTO IN CONTANTI</p>
+                            <p className="text-xs text-gray-400">Pagherai direttamente al momento del ritiro</p>
+                          </div>
+
+                          {!showCheckoutForm ? (
+                              <button
+                                  onClick={() => setShowCheckoutForm(true)}
+                                  className="w-full bg-lime-400 text-black py-4 rounded-lg font-black text-lg hover:bg-lime-300 transition-all duration-200 transform hover:scale-105"
+                              >
+                                PROCEDI AL CHECKOUT
+                              </button>
+                          ) : (
+                              <div className="space-y-4">
+                                <h4 className="text-lg font-bold text-[#00BFFF] mb-3">I tuoi dati per l'ordine</h4>
+
+                                <div className="space-y-3">
+                                  <div className="relative">
+                                    <User className="absolute left-3 top-3 text-gray-400" size={18}/>
+                                    <input
+                                        type="text"
+                                        placeholder="Nome *"
+                                        value={customerInfo.nome}
+                                        onChange={(e) => handleCustomerInfoChange('nome', e.target.value)}
+                                        className="w-full bg-black border border-gray-600 rounded-lg py-3 pl-10 pr-4 text-white placeholder-gray-400 focus:border-lime-400 focus:outline-none"
+                                    />
+                                  </div>
+
+                                  <div className="relative">
+                                    <User className="absolute left-3 top-3 text-gray-400" size={18}/>
+                                    <input
+                                        type="text"
+                                        placeholder="Cognome *"
+                                        value={customerInfo.cognome}
+                                        onChange={(e) => handleCustomerInfoChange('cognome', e.target.value)}
+                                        className="w-full bg-black border border-gray-600 rounded-lg py-3 pl-10 pr-4 text-white placeholder-gray-400 focus:border-lime-400 focus:outline-none"
+                                    />
+                                  </div>
+
+                                  <div className="relative">
+                                    <Phone className="absolute left-3 top-3 text-gray-400" size={18}/>
+                                    <input
+                                        type="tel"
+                                        placeholder="Numero di telefono *"
+                                        value={customerInfo.telefono}
+                                        onChange={(e) => handleCustomerInfoChange('telefono', e.target.value)}
+                                        className="w-full bg-black border border-gray-600 rounded-lg py-3 pl-10 pr-4 text-white placeholder-gray-400 focus:border-lime-400 focus:outline-none"
+                                    />
+                                  </div>
+
+                                  <div className="relative">
+                                    <Mail className="absolute left-3 top-3 text-gray-400" size={18}/>
+                                    <input
+                                        type="email"
+                                        placeholder="Email (opzionale)"
+                                        value={customerInfo.email}
+                                        onChange={(e) => handleCustomerInfoChange('email', e.target.value)}
+                                        className="w-full bg-black border border-gray-600 rounded-lg py-3 pl-10 pr-4 text-white placeholder-gray-400 focus:border-lime-400 focus:outline-none"
+                                    />
+                                  </div>
+                                </div>
+
+                                <div className="flex space-x-2 pt-2">
+                                  <button
+                                      onClick={() => setShowCheckoutForm(false)}
+                                      className="flex-1 bg-gray-700 text-white py-3 rounded-lg font-bold hover:bg-gray-600 transition-all"
+                                  >
+                                    INDIETRO
+                                  </button>
+                                  <button
+                                      onClick={completeOrder}
+                                      disabled={!isFormValid()}
+                                      className={`flex-1 py-3 rounded-lg font-bold transition-all transform ${
+                                          isFormValid()
+                                              ? 'bg-lime-400 text-black hover:bg-lime-300 hover:scale-105'
+                                              : 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                                      }`}
+                                  >
+                                    CONFERMA ORDINE
+                                  </button>
+                                </div>
+                              </div>
+                          )}
                         </div>
                       </>
                   )}
@@ -305,6 +562,43 @@ const App: React.FC = () => {
               </div>
             </div>
         )}
+
+        {/* Order Confirmation Modal */}
+        {orderCompleted && (
+            <div className="fixed inset-0 z-60 flex items-center justify-center">
+              <div className="absolute inset-0 bg-black/80"></div>
+              <div
+                  className="relative bg-gray-900 p-8 rounded-2xl border-2 border-lime-400 max-w-md mx-4 text-center transform animate-pulse">
+                <CheckCircle className="mx-auto text-lime-400 mb-4" size={64}/>
+                <h3 className="text-2xl font-black text-[#00BFFF] mb-2">ORDINE CONFERMATO!</h3>
+                <p className="text-lime-400 font-bold text-lg mb-2">Ordine #{orderNumber}</p>
+                <p className="text-gray-300 text-sm mb-4">
+                  Ti contatteremo a breve per organizzare il ritiro dei tuoi prodotti!
+                </p>
+                <div className="bg-black/50 p-3 rounded-lg">
+                  <p className="text-xs text-gray-400">Questo messaggio si chiuderà automaticamente...</p>
+                </div>
+              </div>
+            </div>
+        )}
+
+        {addedToCart && (
+            <div className="fixed inset-0 z-60 flex items-center justify-center">
+              <div className="absolute inset-0 bg-black/80"></div>
+              <div className="relative bg-gray-900 p-8 rounded-2xl border-2 border-lime-400 max-w-md mx-4 text-center transform animate-pulse">
+                <img src={'./basket.png'} className="mx-auto text-lime-400 mb-4" width={64} />
+                <h3 className="text-2xl font-black text-lime-400 mb-2">PRODOTTO AGGIUNTO!</h3>
+                <p className="text-white font-semibold text-lg mb-2">“Il prodotto è stato aggiunto nel tuo carrello.</p>
+                <p className="text-gray-300 text-sm mb-4">
+                  Puoi continuare a fare acquisti o procedere al checkout.
+                </p>
+                <div className="bg-black/50 p-3 rounded-lg">
+                  <p className="text-xs text-gray-400">Questo messaggio si chiuderà automaticamente...</p>
+                </div>
+              </div>
+            </div>
+        )}
+
 
         {/* Footer */}
         <footer className="bg-black border-t-2 border-lime-400 py-12">
@@ -316,17 +610,13 @@ const App: React.FC = () => {
               <p className="text-gray-400 mb-6">
                 Il playground non dorme mai. Nemmeno noi.
               </p>
-              <div className="flex justify-center space-x-8 text-gray-400">
-                <a href="#" className="hover:text-lime-400 transition-colors">Privacy Policy</a>
-                <a href="#" className="hover:text-lime-400 transition-colors">Terms of Service</a>
-                <a href="#" className="hover:text-lime-400 transition-colors">Contatti</a>
-              </div>
-              <div className="mt-8 text-gray-600">
-                © 2025 Late Night Hoop. Tutti i diritti riservati.
+              <div className="mt-2 text-sm text-gray-200">
+                Sito sviluppato da <a href="https://www.instagram.com/mattiacucuzza_/" target="_blank" className="text-lime-400 hover:underline">Mattia Cucuzza </a>
               </div>
             </div>
           </div>
         </footer>
+
       </div>
   );
 };
