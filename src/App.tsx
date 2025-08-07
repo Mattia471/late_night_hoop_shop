@@ -18,6 +18,7 @@ const App: React.FC = () => {
   const [orderCompleted, setOrderCompleted] = useState<boolean>(false);
   const [addedToCart, setAddedToCart] = useState<boolean>(false);
   const [orderNumber, setOrderNumber] = useState<string>('');
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
 
   const products: Product[] = [
     {
@@ -130,7 +131,8 @@ const App: React.FC = () => {
   const isFormValid = (): boolean => {
     return customerInfo.nome.trim() !== '' &&
         customerInfo.cognome.trim() !== '' &&
-        customerInfo.telefono.trim() !== '';
+        customerInfo.telefono.trim() !== '' &&
+        acceptedTerms
   };
 
   const generateOrderNumber = (): string => {
@@ -533,6 +535,20 @@ const App: React.FC = () => {
                                   </div>
                                 </div>
 
+                                <div className="flex items-start space-x-2 text-sm text-gray-300">
+                                  <input
+                                      type="checkbox"
+                                      id="terms"
+                                      checked={acceptedTerms}
+                                      onChange={(e) => setAcceptedTerms(e.target.checked)}
+                                      className="mt-1 accent-lime-400 w-4 h-4"
+                                  />
+                                  <label htmlFor="terms" className="leading-snug cursor-pointer">
+                                    Accetto i termini e
+                                    condizioni di vendita
+                                  </label>
+                                </div>
+
                                 <div className="flex space-x-2 pt-2">
                                   <button
                                       onClick={() => setShowCheckoutForm(false)}
@@ -542,7 +558,7 @@ const App: React.FC = () => {
                                   </button>
                                   <button
                                       onClick={completeOrder}
-                                      disabled={!isFormValid()}
+                                      disabled={!isFormValid() || !acceptedTerms}
                                       className={`flex-1 py-3 rounded-lg font-bold transition-all transform ${
                                           isFormValid()
                                               ? 'bg-lime-400 text-black hover:bg-lime-300 hover:scale-105'
