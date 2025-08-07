@@ -142,9 +142,9 @@ const App: React.FC = () => {
 
     try {
       // Configurazione EmailJS (sostituisci con i tuoi dati)
-      const serviceID = 'service_7lcd0t2'; // Dal dashboard EmailJS
-      const templateID = 'template_3r2k30y'; // Dal dashboard EmailJS
-      const publicKey = 'qeOlzhTQkJ-vdAIIz'; // Dal dashboard EmailJS
+      const serviceID = process.env.EMAILJS_SERVICE_ID!;
+      const templateID = process.env.EMAILJS_TEMPLATE_ID!;
+      const publicKey = process.env.EMAILJS_PUBLIC_KEY!;
 
       const emailParams = {
         to_name: 'Venditore',
