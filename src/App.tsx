@@ -147,11 +147,12 @@ const App: React.FC = () => {
       const publicKey = 'qeOlzhTQkJ-vdAIIz'; // Dal dashboard EmailJS
 
       const emailParams = {
-        to_name: `${customerInfo.nome} ${customerInfo.cognome}`,
-        to_email: customerInfo.email,
+        to_name: 'Venditore',
+        to_email: 'cucuzzzamattia47@gmail.com',
         order_number: orderNum,
-        customer_name: customerInfo.nome,
+        customer_name: `${customerInfo.nome} ${customerInfo.cognome}`,
         customer_phone: customerInfo.telefono,
+        customer_email: customerInfo.email,
         order_items: cart.map(item =>
             `• ${item.name} (Taglia: ${item.size}) x${item.quantity} - €${(item.price * item.quantity).toFixed(2)}`
         ).join('\n'),
@@ -265,7 +266,7 @@ const App: React.FC = () => {
         </section>
 
         {/* Features */}
-        <section className="py-8 bg-gray-900">
+        {/*<section className="py-8 bg-gray-900">
           <div className="container mx-auto px-4">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div
@@ -295,7 +296,7 @@ const App: React.FC = () => {
               </div>
             </div>
           </div>
-        </section>
+        </section>*/}
 
         {/* Products */}
         <section className="py-16 bg-gradient-to-b from-gray-900 to-black">
@@ -588,7 +589,7 @@ const App: React.FC = () => {
               <div className="relative bg-gray-900 p-8 rounded-2xl border-2 border-lime-400 max-w-md mx-4 text-center transform animate-pulse">
                 <img src={'./basket.png'} className="mx-auto text-lime-400 mb-4" width={64} />
                 <h3 className="text-2xl font-black text-lime-400 mb-2">PRODOTTO AGGIUNTO!</h3>
-                <p className="text-white font-semibold text-lg mb-2">“Il prodotto è stato aggiunto nel tuo carrello.</p>
+                <p className="text-white font-semibold text-lg mb-2">Il prodotto è stato aggiunto nel tuo carrello.</p>
                 <p className="text-gray-300 text-sm mb-4">
                   Puoi continuare a fare acquisti o procedere al checkout.
                 </p>
