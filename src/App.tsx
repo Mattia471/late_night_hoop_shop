@@ -160,6 +160,7 @@ const App: React.FC = () => {
         company_name: 'Late Night Hoop'
       };
 
+
       // Invio email automatico (nascosto all'utente)
       const response = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
         method: 'POST',
