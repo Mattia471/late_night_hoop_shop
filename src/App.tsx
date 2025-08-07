@@ -467,7 +467,7 @@ const App: React.FC = () => {
                             style={{transitionDelay: `${cart.length * 100 + 200}ms`}}
                         >
                           <div className="flex justify-between items-center mb-4">
-                            <span className="text-xl font-bold text-[#00BFFF]">TOTALE:</span>
+                            <span className="text-xl font-bold text-white">TOTALE:</span>
                             <span className="text-2xl font-black text-lime-400">€{getTotalPrice().toFixed(2)}</span>
                           </div>
 
@@ -485,7 +485,7 @@ const App: React.FC = () => {
                               </button>
                           ) : (
                               <div className="space-y-4">
-                                <h4 className="text-lg font-bold text-[#00BFFF] mb-3">I tuoi dati per l'ordine</h4>
+                                <h4 className="text-lg font-bold text-white mb-3">I tuoi dati per l'ordine</h4>
 
                                 <div className="space-y-3">
                                   <div className="relative">
@@ -569,7 +569,7 @@ const App: React.FC = () => {
               <div
                   className="relative bg-gray-900 p-8 rounded-2xl border-2 border-lime-400 max-w-md mx-4 text-center transform animate-pulse">
                 <CheckCircle className="mx-auto text-lime-400 mb-4" size={64}/>
-                <h3 className="text-2xl font-black text-[#00BFFF] mb-2">ORDINE CONFERMATO!</h3>
+                <h3 className="text-2xl font-black text-white mb-2">ORDINE CONFERMATO!</h3>
                 <p className="text-lime-400 font-bold text-lg mb-2">Ordine #{orderNumber}</p>
                 <p className="text-gray-300 text-sm mb-4">
                   Ti contatteremo a breve per organizzare il ritiro dei tuoi prodotti!
