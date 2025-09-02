@@ -1,7 +1,18 @@
 import React, {useState} from 'react';
-import {Banknote, Instagram, Minus, Plus, Shield, ShoppingCart, Users, ChevronLeft, ChevronRight, User, Phone, Mail, CheckCircle} from 'lucide-react';
+import {
+  CheckCircle,
+  ChevronLeft,
+  ChevronRight,
+  Instagram,
+  Mail,
+  Minus,
+  Phone,
+  Plus,
+  ShoppingCart,
+  User
+} from 'lucide-react';
 import {CartItem, CustomerInfo, Product} from "./types";
-
+import { Analytics } from "@vercel/analytics/react"
 
 const App: React.FC = () => {
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -214,6 +225,7 @@ const App: React.FC = () => {
 
   return (
       <div className="min-h-screen bg-black text-white">
+        <Analytics />
         {/* Header */}
         <header className="bg-gradient-to-r from-black to-gray-900 border-b-2 border-lime-400 sticky top-0 z-40">
           <div className="container mx-auto px-4 py-4">
