@@ -1006,7 +1006,7 @@ const App: React.FC = () => {
                 onClick={closeOrderConfirmation}
                 className="w-full border border-white/15 py-3 text-xs font-black uppercase tracking-[0.14em] text-white transition hover:border-white/40"
               >
-                Ho salvato il QR
+                Ho salvato il QR · chiudi
               </button>
             </div>
 
