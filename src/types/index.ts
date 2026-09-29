@@ -77,3 +77,20 @@ export interface PickupOrderSummary {
   collectedAt: string | null;
   items: PickupOrderItem[];
 }
+
+
+export interface PendingOrderItem {
+  productName: string;
+  color: string;
+  size: TeeSize;
+  quantity: number;
+}
+
+export interface PendingOrder {
+  orderNumber: string;
+  customerName: string;
+  customerSurname: string;
+  totalCents: number;
+  createdAt: string;
+  items: PendingOrderItem[];
+}

@@ -25,6 +25,7 @@ import {
   CartItem,
   CustomerInfo,
   EventSettings,
+  PendingOrder,
   PickupOrderSummary,
   Product,
   TeeSize,
@@ -32,6 +33,7 @@ import {
 import {
   collectPickupOrder,
   createReservation,
+  getPendingOrders,
   getPickupOrder,
   getProducts,
   getShopData,
@@ -82,6 +84,7 @@ const App: React.FC = () => {
     () => new URLSearchParams(window.location.search).get('pickup')?.trim() || '',
     [],
   );
+  const isOrdersPage = window.location.pathname.replace(/\/+$/, '') === '/orders';
 
   const totalPrice = useMemo(
     () => cart.reduce((total, item) => total + item.price * item.quantity, 0),
@@ -339,6 +342,10 @@ const App: React.FC = () => {
   const scrollToDrop = (): void => {
     document.getElementById('drop')?.scrollIntoView({ behavior: 'smooth' });
   };
+
+  if (isOrdersPage) {
+    return <PendingOrdersPage />;
+  }
 
   if (pickupTokenFromUrl) {
     return <PickupCheckIn pickupToken={pickupTokenFromUrl} />;
@@ -1032,6 +1039,123 @@ const App: React.FC = () => {
   );
 };
 
+
+const PendingOrdersPage: React.FC = () => {
+  const [orders, setOrders] = useState<PendingOrder[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let active = true;
+
+    const loadOrders = async (): Promise<void> => {
+      try {
+        const data = await getPendingOrders();
+        if (active) setOrders(data);
+      } catch (loadError) {
+        if (active) {
+          setError(
+            loadError instanceof Error
+              ? loadError.message
+              : 'Impossibile caricare gli ordini.',
+          );
+        }
+      } finally {
+        if (active) setIsLoading(false);
+      }
+    };
+
+    void loadOrders();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const formatDate = (value: string): string =>
+    new Intl.DateTimeFormat('it-IT', {
+      dateStyle: 'short',
+      timeStyle: 'short',
+    }).format(new Date(value));
+
+  return (
+    <div className="min-h-screen bg-black px-4 py-8 text-white sm:px-6">
+      <main className="mx-auto max-w-4xl">
+        <header className="mb-8 border-b border-white/10 pb-5">
+          <p className="text-[10px] font-black uppercase tracking-[0.24em] text-lime-400">
+            Late Night Hoop
+          </p>
+          <div className="mt-2 flex items-end justify-between gap-4">
+            <h1 className="text-3xl font-black uppercase tracking-[-0.03em] sm:text-4xl">
+              Ordini pendenti
+            </h1>
+            {!isLoading && !error && (
+              <span className="text-sm font-black text-white/40">
+                {orders.length}
+              </span>
+            )}
+          </div>
+        </header>
+
+        {isLoading ? (
+          <p className="py-12 text-center text-sm text-white/40">
+            Caricamento ordini...
+          </p>
+        ) : error ? (
+          <div className="border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-300">
+            {error}
+          </div>
+        ) : orders.length === 0 ? (
+          <div className="border border-white/10 p-8 text-center">
+            <p className="font-black uppercase">Nessun ordine pendente</p>
+            <p className="mt-2 text-sm text-white/40">
+              Tutte le prenotazioni risultano ritirate o annullate.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {orders.map((order) => (
+              <article
+                key={order.orderNumber}
+                className="border border-white/10 bg-[#090909] p-4 sm:p-5"
+              >
+                <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+                  <div>
+                    <p className="text-xs font-black text-lime-400">
+                      {order.orderNumber}
+                    </p>
+                    <h2 className="mt-1 text-lg font-black">
+                      {order.customerName} {order.customerSurname}
+                    </h2>
+                    <p className="mt-1 text-xs text-white/35">
+                      {formatDate(order.createdAt)}
+                    </p>
+                  </div>
+
+                  <p className="text-xl font-black">
+                    €{(order.totalCents / 100).toFixed(2)}
+                  </p>
+                </div>
+
+                <div className="mt-4 border-t border-white/10 pt-3">
+                  {order.items.map((item, index) => (
+                    <p
+                      key={`${order.orderNumber}-${index}`}
+                      className="py-1 text-sm text-white/60"
+                    >
+                      <span className="font-bold text-white">{item.quantity}×</span>{' '}
+                      {item.productName} · {item.color} · {item.size}
+                    </p>
+                  ))}
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </main>
+    </div>
+  );
+};
 
 const PickupCheckIn: React.FC<{ pickupToken: string }> = ({ pickupToken }) => {
   const [order, setOrder] = useState<PickupOrderSummary | null>(null);

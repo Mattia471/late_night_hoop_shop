@@ -4,6 +4,7 @@ import {
   CustomerInfo,
   EventSettings,
   Product,
+  PendingOrder,
   PickupOrderSummary,
   ProductVariant,
   ReservationResult,
@@ -241,4 +242,32 @@ export const subscribeInventory = (onChange: () => void): (() => void) => {
   return () => {
     void supabase.removeChannel(channel);
   };
+};
+
+
+export const getPendingOrders = async (): Promise<PendingOrder[]> => {
+  const { data, error } = await supabase
+    .from('pending_orders_public')
+    .select('order_number,customer_name,customer_surname,total_cents,created_at,items')
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    throw new Error(error.message || 'Impossibile caricare gli ordini pendenti.');
+  }
+
+  return (data || []).map((order: any) => ({
+    orderNumber: order.order_number,
+    customerName: order.customer_name,
+    customerSurname: order.customer_surname,
+    totalCents: order.total_cents,
+    createdAt: order.created_at,
+    items: Array.isArray(order.items)
+      ? order.items.map((item: any) => ({
+          productName: item.product_name,
+          color: item.color,
+          size: item.size,
+          quantity: item.quantity,
+        }))
+      : [],
+  }));
 };
