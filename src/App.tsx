@@ -1,651 +1,1176 @@
-import React, {useState} from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  Banknote,
   CheckCircle,
   ChevronLeft,
   ChevronRight,
   Instagram,
   Mail,
+  MapPin,
   Minus,
+  Paintbrush,
   Phone,
   Plus,
   ShoppingCart,
-  User
-} from 'lucide-react';
-import {CartItem, CustomerInfo, Product} from "./types";
-import { Analytics } from "@vercel/analytics/react"
+  Sparkles,
+  User,
+  X,
+} from "lucide-react";
+import { Analytics } from "@vercel/analytics/react";
+import {
+  CartItem,
+  CustomerInfo,
+  EventSettings,
+  Product,
+  TeeSize,
+} from "./types";
+import {
+  createReservation,
+  getProducts,
+  getShopData,
+  subscribeInventory,
+} from "./services/shopService";
+
+const FALLBACK_EVENT_SETTINGS: EventSettings = {
+  id: 1,
+  eventName: "Late Night Hoop",
+  eventInstagramHandle: "@latenight_hoop",
+  eventInstagramUrl: "https://www.instagram.com/latenight_hoop/",
+  developerInstagramHandle: "@mattiacucuzza_",
+  developerInstagramUrl: "https://www.instagram.com/mattiacucuzza_/",
+  pickupCopy: "Ritiro e pagamento esclusivamente presso lo stand",
+  customizationCopy: "Personalizzazione gratuita presso lo stand",
+  reservationOpen: true,
+  initialStock: 35,
+};
+
+const emptyCustomerInfo: CustomerInfo = {
+  nome: "",
+  cognome: "",
+  telefono: "",
+  email: "",
+};
 
 const App: React.FC = () => {
+  const [products, setProducts] = useState<Product[]>([]);
+  const [eventSettings, setEventSettings] = useState<EventSettings>(
+    FALLBACK_EVENT_SETTINGS,
+  );
+  const [isLoadingCatalog, setIsLoadingCatalog] = useState(true);
+  const [catalogError, setCatalogError] = useState("");
   const [cart, setCart] = useState<CartItem[]>([]);
-  const [isCartOpen, setIsCartOpen] = useState<boolean>(false);
-  const [selectedSizes, setSelectedSizes] = useState<{[key: number]: string}>({});
-  const [currentImageIndex, setCurrentImageIndex] = useState<{[key: number]: number}>({});
-  const [showCheckoutForm, setShowCheckoutForm] = useState<boolean>(false);
-  const [customerInfo, setCustomerInfo] = useState<CustomerInfo>({
-    nome: '',
-    cognome: '',
-    telefono: '',
-    email: ''
-  });
-  const [orderCompleted, setOrderCompleted] = useState<boolean>(false);
-  const [addedToCart, setAddedToCart] = useState<boolean>(false);
-  const [orderNumber, setOrderNumber] = useState<string>('');
+  const [isCartOpen, setIsCartOpen] = useState(false);
+  const [selectedSizes, setSelectedSizes] = useState<Record<number, TeeSize>>(
+    {},
+  );
+  const [currentImageIndex, setCurrentImageIndex] = useState<
+    Record<number, number>
+  >({});
+  const [showCheckoutForm, setShowCheckoutForm] = useState(false);
+  const [customerInfo, setCustomerInfo] =
+    useState<CustomerInfo>(emptyCustomerInfo);
+  const [orderCompleted, setOrderCompleted] = useState(false);
+  const [addedToCart, setAddedToCart] = useState(false);
+  const [orderNumber, setOrderNumber] = useState("");
   const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
 
-  const products: Product[] = [
-    {
-      id: 1,
-      name: "Late Night Hoop - White",
-      price: 15.00,
-      images: ["shirt_white_1_front.jpeg", "shirt_white_1_retro.jpeg"], // Aggiungi più immagini qui
-      sizes: ["S","M","L","XL","XXL"],
-      description: ""
-    },
-    {
-      id: 2,
-      name: "Late Night Hoop - Black",
-      price: 15.00,
-      images: ["shirt_black_2_front.jpeg", "shirt_black_1_retro.jpeg"], // Aggiungi più immagini qui
-      sizes: ["S","M","L","XL","XXL"],
-      description: ""
-    },
-    {
-      id: 4,
-      name: "Late Night Hoop Arched - White",
-      price: 15.00,
-      images: ["shirt_white_2_front.jpeg", "shirt_white_1_retro.jpeg"], // Aggiungi più immagini qui
-      sizes: ["S","M","L","XL","XXL"],
-      description: ""
-    },
-    {
-      id: 3,
-      name: "Late Night Hoop Arched - Black",
-      price: 15.00,
-      images: ["shirt_black_1_front.jpeg", "shirt_black_1_retro.jpeg"], // Aggiungi più immagini qui
-      sizes: ["S","M","L","XL","XXL"],
-      description: ""
-    },
-  ];
+  const totalPrice = useMemo(
+    () => cart.reduce((total, item) => total + item.price * item.quantity, 0),
+    [cart],
+  );
+
+  const totalItems = useMemo(
+    () => cart.reduce((total, item) => total + item.quantity, 0),
+    [cart],
+  );
+
+  const getCartQuantity = (productId: number, size: string): number =>
+    cart.find((item) => item.id === productId && item.size === size)
+      ?.quantity || 0;
+
+  const getVariantStock = (productId: number, size: string): number =>
+    products
+      .find((product) => product.id === productId)
+      ?.variants.find((variant) => variant.size === size)?.stock || 0;
+
+  const getAvailableStock = (productId: number, size: string): number =>
+    Math.max(
+      getVariantStock(productId, size) - getCartQuantity(productId, size),
+      0,
+    );
+
+  const getProductAvailableStock = (productId: number): number =>
+    products
+      .find((product) => product.id === productId)
+      ?.variants.reduce((total, variant) => total + variant.stock, 0) || 0;
+
+  const totalAvailableStock = products.reduce(
+    (total, product) =>
+      total + product.variants.reduce((sum, variant) => sum + variant.stock, 0),
+    0,
+  );
 
   const addToCart = (product: Product): void => {
+    if (!eventSettings.reservationOpen) return;
+
     const selectedSize = selectedSizes[product.id];
     if (!selectedSize) return;
 
-    const existingItem = cart.find(
-        item => item.id === product.id && item.size === selectedSize
-    );
+    const variant = product.variants.find((item) => item.size === selectedSize);
+    if (!variant || getAvailableStock(product.id, selectedSize) <= 0) return;
 
-    if (existingItem) {
-      setCart(cart.map(item =>
-          item.id === product.id && item.size === selectedSize
-              ? { ...item, quantity: item.quantity + 1 }
-              : item
-      ));
-    } else {
-      setCart([...cart, { ...product, size: selectedSize, quantity: 1 }]);
-    }
-    setAddedToCart(true)
-    setTimeout(() => {
-      setAddedToCart(false)
-    }, 2000);
+    setCart((previousCart) => {
+      const existingItem = previousCart.find(
+        (item) => item.variantId === variant.id,
+      );
+
+      if (existingItem) {
+        if (existingItem.quantity >= variant.stock) return previousCart;
+
+        return previousCart.map((item) =>
+          item.variantId === variant.id
+            ? { ...item, quantity: item.quantity + 1 }
+            : item,
+        );
+      }
+
+      return [
+        ...previousCart,
+        {
+          ...product,
+          size: selectedSize,
+          variantId: variant.id,
+          quantity: 1,
+        },
+      ];
+    });
+
+    setAddedToCart(true);
+    window.setTimeout(() => setAddedToCart(false), 1600);
   };
 
   const updateQuantity = (id: number, size: string, change: number): void => {
-    setCart(cart.map(item => {
-      if (item.id === id && item.size === size) {
-        const newQuantity = item.quantity + change;
-        return newQuantity > 0 ? { ...item, quantity: newQuantity } : null;
-      }
-      return item;
-    }).filter((item): item is CartItem => item !== null));
+    const maxStock = getVariantStock(id, size);
+
+    setCart((previousCart) =>
+      previousCart
+        .map((item) => {
+          if (item.id !== id || item.size !== size) return item;
+
+          const quantity = Math.min(item.quantity + change, maxStock);
+          return quantity > 0 ? { ...item, quantity } : null;
+        })
+        .filter((item): item is CartItem => item !== null),
+    );
   };
 
-  const getTotalPrice = (): number => {
-    return cart.reduce((total, item) => total + (item.price * item.quantity), 0);
-  };
-
-  const getTotalItems = (): number => {
-    return cart.reduce((total, item) => total + item.quantity, 0);
-  };
-
-  const handleSizeSelection = (productId: number, size: string): void => {
-    setSelectedSizes(prev => ({
-      ...prev,
-      [productId]: size
-    }));
+  const handleSizeSelection = (productId: number, size: TeeSize): void => {
+    setSelectedSizes((previous) => ({ ...previous, [productId]: size }));
   };
 
   const nextImage = (productId: number, totalImages: number): void => {
-    setCurrentImageIndex(prev => ({
-      ...prev,
-      [productId]: ((prev[productId] || 0) + 1) % totalImages
+    setCurrentImageIndex((previous) => ({
+      ...previous,
+      [productId]: ((previous[productId] || 0) + 1) % totalImages,
     }));
   };
 
   const prevImage = (productId: number, totalImages: number): void => {
-    setCurrentImageIndex(prev => ({
-      ...prev,
-      [productId]: ((prev[productId] || 0) - 1 + totalImages) % totalImages
+    setCurrentImageIndex((previous) => ({
+      ...previous,
+      [productId]: ((previous[productId] || 0) - 1 + totalImages) % totalImages,
     }));
   };
 
-  const getCurrentImageIndex = (productId: number): number => {
-    return currentImageIndex[productId] || 0;
+  const handleCustomerInfoChange = (
+    field: keyof CustomerInfo,
+    value: string,
+  ): void => {
+    setCustomerInfo((previous) => ({ ...previous, [field]: value }));
+    if (submitError) setSubmitError("");
   };
 
-  const handleCustomerInfoChange = (field: keyof CustomerInfo, value: string): void => {
-    setCustomerInfo(prev => ({
-      ...prev,
-      [field]: value
-    }));
-  };
+  const isPhoneValid = customerInfo.telefono.replace(/\D/g, "").length >= 8;
+  const isEmailValid =
+    customerInfo.email.trim() === "" ||
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerInfo.email.trim());
 
-  const isFormValid = (): boolean => {
-    return customerInfo.nome.trim() !== '' &&
-        customerInfo.cognome.trim() !== '' &&
-        customerInfo.telefono.trim() !== '' &&
-        acceptedTerms
-  };
+  const isFormValid =
+    customerInfo.nome.trim() !== "" &&
+    customerInfo.cognome.trim() !== "" &&
+    isPhoneValid &&
+    isEmailValid &&
+    acceptedTerms;
 
-  const generateOrderNumber = (): string => {
-    return 'LNH' + Date.now().toString().slice(-6);
-  };
-
-  const sendEmail = async (orderNum: string): Promise<void> => {
+  const refreshProducts = useCallback(async (): Promise<void> => {
     try {
-      const serviceID = 'service_7lcd0t2'; // Dal dashboard EmailJS
-      const templateID = 'template_3r2k30y'; // Dal dashboard EmailJS
-      const publicKey = 'qeOlzhTQkJ-vdAIIz'; // Dal dashboard EmailJS
-
-      const emailParams = {
-        to_name: 'Venditore',
-        to_email: 'cucuzzzamattia47@gmail.com',
-        order_number: orderNum,
-        customer_name: `${customerInfo.nome} ${customerInfo.cognome}`,
-        customer_phone: customerInfo.telefono,
-        customer_email: customerInfo.email,
-        order_items: cart.map(item =>
-            `• ${item.name} (Taglia: ${item.size}) x${item.quantity} - €${(item.price * item.quantity).toFixed(2)}`
-        ).join('\n'),
-        total_price: getTotalPrice().toFixed(2),
-        company_name: 'Late Night Hoop'
-      };
-
-
-      // Invio email automatico (nascosto all'utente)
-      const response = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          service_id: serviceID,
-          template_id: templateID,
-          user_id: publicKey,
-          template_params: emailParams
-        })
-      });
-
-      if (response.ok) {
-        console.log('✅ Email inviata con successo a:', customerInfo.email);
-      } else {
-        console.error('❌ Errore invio email:', response.statusText);
-      }
-
+      const nextProducts = await getProducts();
+      setProducts(nextProducts);
+      setCatalogError("");
     } catch (error) {
-      console.error('❌ Errore EmailJS:', error);
+      console.error("Errore aggiornamento catalogo:", error);
+      setCatalogError(
+        "Non riesco ad aggiornare le disponibilità in questo momento.",
+      );
+    }
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const load = async (): Promise<void> => {
+      setIsLoadingCatalog(true);
+      try {
+        const shop = await getShopData();
+        if (!mounted) return;
+        setProducts(shop.products);
+        setEventSettings(shop.settings);
+        setCatalogError("");
+      } catch (error) {
+        console.error("Errore caricamento Supabase:", error);
+        if (mounted) {
+          setCatalogError(
+            "Non riesco a caricare il drop. Controlla la configurazione Supabase.",
+          );
+        }
+      } finally {
+        if (mounted) setIsLoadingCatalog(false);
+      }
+    };
+
+    void load();
+    const unsubscribe = subscribeInventory(() => {
+      void refreshProducts();
+    });
+
+    return () => {
+      mounted = false;
+      unsubscribe();
+    };
+  }, [refreshProducts]);
+
+  const completeOrder = async (): Promise<void> => {
+    if (!isFormValid || isSubmitting) return;
+
+    if (!eventSettings.reservationOpen) {
+      setSubmitError("Le prenotazioni sono attualmente chiuse.");
+      return;
+    }
+
+    const hasUnavailableItems = cart.some(
+      (item) => item.quantity > getVariantStock(item.id, item.size),
+    );
+
+    if (hasUnavailableItems) {
+      setSubmitError(
+        "La disponibilità è cambiata. Controlla nuovamente il carrello.",
+      );
+      await refreshProducts();
+      return;
+    }
+
+    setIsSubmitting(true);
+    setSubmitError("");
+
+    try {
+      const reservation = await createReservation(customerInfo, cart);
+
+      setOrderNumber(reservation.orderNumber);
+      setOrderCompleted(true);
+      setShowCheckoutForm(false);
+      setIsCartOpen(false);
+
+      await refreshProducts();
+
+      window.setTimeout(() => {
+        setOrderCompleted(false);
+        setCart([]);
+        setCustomerInfo(emptyCustomerInfo);
+        setAcceptedTerms(false);
+        setSelectedSizes({});
+      }, 7000);
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Non siamo riusciti a registrare la prenotazione. Riprova tra qualche secondo.";
+      setSubmitError(message);
+      await refreshProducts();
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-
-  const completeOrder = (): void => {
-    const newOrderNumber = generateOrderNumber();
-    setOrderNumber(newOrderNumber);
-
-    // Invia Email
-    sendEmail(newOrderNumber);
-
-    // Mostra conferma ordine
-    setOrderCompleted(true);
-    setShowCheckoutForm(false);
-    setIsCartOpen(false)
-
-    // Reset dopo 5 secondi
-    setTimeout(() => {
-      setOrderCompleted(false);
-      setCart([]);
-      setCustomerInfo({
-        nome: '',
-        cognome: '',
-        telefono: '',
-        email: ''
-      });
-      setIsCartOpen(false);
-    }, 5000);
+  const scrollToDrop = (): void => {
+    document.getElementById("drop")?.scrollIntoView({ behavior: "smooth" });
   };
 
   return (
-      <div className="min-h-screen bg-black text-white">
-        <Analytics />
-        {/* Header */}
-        <header className="bg-gradient-to-r from-black to-gray-900 border-b-2 border-lime-400 sticky top-0 z-40">
-          <div className="container mx-auto px-4 py-4">
-            <div className="flex justify-between items-center">
-              <div className="flex items-center space-x-4">
-                <img src={"basket.png"} alt={'Late Night Hoop'} width={'50'}/>
-                <div className="lg:text-3xl text-xl font-black text-lime-400">
-                  LATE NIGHT<span className="text-white"> HOOP</span>
-                </div>
-              </div>
-              <button
-                  onClick={() => setIsCartOpen(!isCartOpen)}
-                  className="relative bg-lime-400 text-black p-2 rounded-full font-bold hover:bg-lime-300 transition-all transform hover:scale-105"
-              >
-                <ShoppingCart className="inline-block" size={20}/>
-                <span
-                    className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold">
-                  {getTotalItems()}
-                </span>
-              </button>
-            </div>
-          </div>
-        </header>
+    <div className="min-h-screen overflow-x-hidden bg-black text-white selection:bg-lime-400 selection:text-black">
+      <Analytics />
 
-        {/* Hero Section */}
-        <section className="relative h-96 bg-gradient-to-r from-gray-900 to-black flex items-center overflow-hidden">
-          <div className="absolute inset-0 bg-black/50 z-10"></div>
-          <div className="absolute inset-0 bg-gradient-to-r from-lime-400/20 to-transparent z-10"></div>
-          <div className="container mx-auto px-4 z-20">
-            <div className="max-w-2xl">
-              <h1 className="lg:text-6xl text-5xl font-black mb-4 text-white">
-                DOMINA IL
-                <span className="text-lime-400 block">PLAYGROUND</span>
-              </h1>
-              <p className="text-xl text-gray-300 mb-8">
-                Merchandising ufficiale per veri ballers. Stile streetball, qualità premium.
+      <header className="sticky top-0 z-40 border-b border-white/10 bg-black/90 backdrop-blur-xl">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6 lg:px-8">
+          <button
+            onClick={scrollToDrop}
+            className="flex items-center gap-3 text-left"
+          >
+            <img
+              src="/basket.png"
+              alt="Late Night Hoop"
+              className="h-10 w-10 object-contain sm:h-11 sm:w-11"
+            />
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.32em] text-white/50">
+                Event drop
               </p>
-              <div className="flex space-x-4">
-                <div className="flex items-center space-x-2 text-lime-400 hover:underline cursor-pointer"
-                     onClick={() => window.open("https://www.instagram.com/latenight_hoop/", " blank")}>
-                  <Instagram size={20}/>
-                  <span>Visitaci su Instagram</span>
+              <p className="text-base font-black tracking-tight sm:text-xl">
+                LATE NIGHT <span className="text-lime-400">HOOP</span>
+              </p>
+            </div>
+          </button>
+
+          <div className="flex items-center gap-3">
+            <a
+              href={eventSettings.eventInstagramUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="hidden items-center gap-2 text-xs font-bold uppercase tracking-[0.16em] text-white/70 transition hover:text-lime-400 sm:flex"
+              aria-label="Apri Instagram Late Night Hoop"
+            >
+              <Instagram size={17} /> {eventSettings.eventInstagramHandle}
+            </a>
+            <button
+              onClick={() => setIsCartOpen(true)}
+              className="relative hidden h-11 items-center gap-2 rounded-full bg-lime-400 px-4 font-black text-black transition hover:bg-lime-300 md:flex"
+              aria-label="Apri prenotazione"
+            >
+              <ShoppingCart size={19} />
+              <span className="hidden text-sm sm:inline">PRENOTAZIONE</span>
+              {totalItems > 0 && (
+                <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-white px-1 text-[10px] font-black text-black">
+                  {totalItems}
+                </span>
+              )}
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <main>
+        <section className="event-grid relative isolate overflow-hidden border-b border-white/10">
+          <div className="absolute -left-32 top-16 h-80 w-80 rounded-full bg-lime-400/20 blur-[120px]" />
+          <div className="absolute right-0 top-0 h-full w-1/2 bg-gradient-to-l from-lime-400/[0.08] to-transparent" />
+
+          <div className="mx-auto grid min-h-[78vh] max-w-7xl items-center gap-12 px-4 py-16 sm:px-6 md:grid-cols-[1.05fr_0.95fr] lg:px-8 lg:py-20">
+            <div className="relative z-10">
+              <div className="mb-6 inline-flex items-center gap-2 border border-lime-400/40 bg-lime-400/10 px-3 py-2 text-[11px] font-black uppercase tracking-[0.24em] text-lime-400">
+                <Sparkles size={14} /> Limited event drop
+              </div>
+
+              <h1 className="max-w-4xl text-5xl font-black uppercase leading-[0.88] tracking-[-0.055em] sm:text-7xl lg:text-[92px]">
+                LNH x Chuck
+                <span className="mt-2 block text-lime-400">Boxy Fit Tee</span>
+              </h1>
+
+              <p className="mt-7 max-w-xl text-base leading-relaxed text-white/65 sm:text-lg">
+                Prenota online la tua tee dell'evento. Nessun pagamento sul
+                sito: la ritiri, la paghi e puoi personalizzarla direttamente
+                allo stand.
+              </p>
+
+              <a
+                href={eventSettings.eventInstagramUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-5 inline-flex items-center gap-2 text-sm font-bold text-white/55 transition hover:text-lime-400"
+              >
+                <Instagram size={17} />
+                Segui l'evento su{" "}
+                <span className="text-white">
+                  {eventSettings.eventInstagramHandle}
+                </span>
+              </a>
+
+              <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+                <button
+                  onClick={scrollToDrop}
+                  className="bg-lime-400 px-7 py-4 text-sm font-black uppercase tracking-[0.12em] text-black transition hover:bg-lime-300"
+                >
+                  Scegli la tua tee
+                </button>
+                <div className="flex items-center gap-3 border border-white/15 px-5 py-4 text-xs font-bold uppercase tracking-[0.12em] text-white/70">
+                  <Banknote size={18} className="text-lime-400" /> €20 · paghi
+                  allo stand
                 </div>
               </div>
             </div>
-          </div>
-          <div className="absolute right-0 top-0 h-full w-1/3 opacity-20">
-            <div className="h-full bg-gradient-to-l from-lime-400/30 to-transparent"></div>
+
+            <div className="relative mx-auto w-full max-w-xl md:max-w-none">
+              <div className="absolute -inset-3 rotate-2 border border-lime-400/25" />
+              <div className="relative overflow-hidden border border-white/10 bg-[#e9e9e9]">
+                <img
+                  src="/lnh-chuck-black-back.jpeg"
+                  alt="LNH x Chuck Boxy Fit Tee nera retro"
+                  className="aspect-square w-full object-cover"
+                />
+                <div className="absolute bottom-0 left-0 right-0 flex items-center justify-between bg-black/90 px-4 py-3 backdrop-blur">
+                  <span className="text-xs font-black uppercase tracking-[0.2em] text-lime-400">
+                    Drop 01
+                  </span>
+                  <span className="text-xs font-bold uppercase tracking-[0.16em] text-white/70">
+                    Black / White
+                  </span>
+                </div>
+              </div>
+            </div>
           </div>
         </section>
 
-        {/* Features */}
-        {/*<section className="py-8 bg-gray-900">
-          <div className="container mx-auto px-4">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div
-                  className="flex items-center space-x-4 bg-black/50 p-6 rounded-lg border border-lime-400/20 hover:border-lime-400 transition-all transform hover:scale-105 hover:shadow-2xl hover:shadow-lime-400/20 cursor-pointer">
-                <Users className="text-lime-400" size={32}/>
-                <div>
-                  <h3 className="font-bold text-lime-400">Ritiro di Persona</h3>
-                  <p className="text-gray-400">Nessuna spedizione prevista</p>
-                </div>
+        <section className="border-b border-white/10 bg-lime-400 text-black">
+          <div className="mx-auto grid max-w-7xl divide-y divide-black/20 px-4 sm:px-6 md:grid-cols-3 md:divide-x md:divide-y-0 lg:px-8">
+            <div className="flex items-center gap-4 py-5 md:px-6">
+              <MapPin size={24} strokeWidth={2.5} />
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.16em]">
+                  Pick-up only
+                </p>
+                <p className="text-sm font-semibold">
+                  {eventSettings.pickupCopy}
+                </p>
               </div>
-              <div
-                  className="flex items-center space-x-4 bg-black/50 p-6 rounded-lg border border-lime-400/20 hover:border-lime-400 transition-all transform hover:scale-105 hover:shadow-2xl hover:shadow-lime-400/20 cursor-pointer">
-                <Shield className="text-lime-400" size={32}/>
-                <div>
-                  <h3 className="font-bold text-lime-400">Garanzia Qualità</h3>
-                  <p className="text-gray-400">30 giorni soddisfatti o rimborsati</p>
-                </div>
+            </div>
+            <div className="flex items-center gap-4 py-5 md:px-6">
+              <Banknote size={24} strokeWidth={2.5} />
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.16em]">
+                  Pay at the stand
+                </p>
+                <p className="text-sm font-semibold">Zero pagamenti online</p>
               </div>
-              <div
-                  className="flex items-center space-x-4 bg-black/50 p-6 rounded-lg border border-lime-400/20 hover:border-lime-400 transition-all transform hover:scale-105 hover:shadow-2xl hover:shadow-lime-400/20 cursor-pointer">
-                <Banknote className="text-lime-400" size={32}/>
-                <div>
-                  <h3 className="font-bold text-lime-400">Pagamento alla consegna</h3>
-                  <p className="text-gray-400">Pagherai comodamente al momento del ritiro, senza alcun anticipo
-                    richiesto.</p>
-                </div>
+            </div>
+            <div className="flex items-center gap-4 py-5 md:px-6">
+              <Paintbrush size={24} strokeWidth={2.5} />
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.16em]">
+                  Make it yours
+                </p>
+                <p className="text-sm font-semibold">
+                  {eventSettings.customizationCopy}
+                </p>
               </div>
             </div>
           </div>
-        </section>*/}
+        </section>
 
-        {/* Products */}
-        <section className="py-16 bg-gradient-to-b from-gray-900 to-black">
-          <div className="container mx-auto px-4">
-            <h2 className="text-4xl font-black text-center mb-12 text-white">
-              MERCH <span className="text-lime-400">COLLECTION</span>
-            </h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-              {products.map(product => {
-                const currentIndex = getCurrentImageIndex(product.id);
-                const selectedSize = selectedSizes[product.id];
+        <section id="drop" className="relative bg-[#070707] py-20 sm:py-24">
+          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+            <div className="mb-10 flex flex-col justify-between gap-5 border-b border-white/10 pb-8 md:flex-row md:items-end">
+              <div>
+                <p className="mb-3 text-xs font-black uppercase tracking-[0.28em] text-lime-400">
+                  The event drop
+                </p>
+                <h2 className="text-4xl font-black uppercase tracking-[-0.035em] sm:text-5xl">
+                  Choose your color.
+                </h2>
+              </div>
+              <div className="md:text-right">
+                <p className="text-sm leading-relaxed text-white/50">
+                  Stesso boxy fit, due colorway. Personalizzazione gratuita live
+                  allo stand.
+                </p>
+                <p className="mt-3 text-xs font-black uppercase tracking-[0.16em] text-lime-400">
+                  {totalAvailableStock} / {eventSettings.initialStock} pezzi
+                  disponibili
+                </p>
+              </div>
+            </div>
 
-                return (
-                    <div
-                        key={product.id}
-                        className="bg-gray-900 rounded-lg overflow-hidden border-2 border-gray-800 hover:border-lime-400 transition-all transform hover:scale-105 hover:shadow-2xl hover:shadow-lime-400/20"
+            {catalogError && (
+              <div className="mb-6 border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200">
+                {catalogError}
+              </div>
+            )}
+
+            <div className="grid gap-7 lg:grid-cols-2">
+              {isLoadingCatalog && products.length === 0 ? (
+                <div className="border border-white/10 bg-black p-10 text-center text-sm font-bold uppercase tracking-[0.16em] text-white/40 lg:col-span-2">
+                  Caricamento drop...
+                </div>
+              ) : (
+                products.map((product) => {
+                  const currentIndex = currentImageIndex[product.id] || 0;
+                  const selectedSize = selectedSizes[product.id];
+                  const selectedSizeAvailable = selectedSize
+                    ? getAvailableStock(product.id, selectedSize)
+                    : 0;
+                  const productAvailableStock = getProductAvailableStock(
+                    product.id,
+                  );
+
+                  return (
+                    <article
+                      key={product.id}
+                      className="group border border-white/10 bg-black"
                     >
-                      <div className="relative">
+                      <div className="relative overflow-hidden bg-[#e8e8e8]">
                         <img
-                            src={product.images[currentIndex]}
-                            alt={product.name}
-                            className="w-full h-[500px] object-cover"
+                          src={product.images[currentIndex]}
+                          alt={`${product.name} ${product.color}`}
+                          className="aspect-square w-full object-cover transition duration-500 group-hover:scale-[1.015]"
                         />
-                        <div
-                            className="absolute top-4 right-4 bg-lime-400 text-black px-2 py-1 rounded-full text-sm font-bold">
-                          NEW
+
+                        <div className="absolute left-4 top-4 bg-black px-3 py-2 text-[10px] font-black uppercase tracking-[0.2em] text-lime-400">
+                          {product.badge}
                         </div>
 
-                        {/* Slider Controls */}
-                        {product.images.length > 1 && (
-                            <>
-                              <button
-                                  onClick={() => prevImage(product.id, product.images.length)}
-                                  className="absolute left-2 top-1/2 transform -translate-y-1/2 bg-black/50 text-white p-2 rounded-full hover:bg-lime-400 transition-all"
-                              >
-                                <ChevronLeft size={20}/>
-                              </button>
-                              <button
-                                  onClick={() => nextImage(product.id, product.images.length)}
-                                  className="absolute right-2 top-1/2 transform -translate-y-1/2 bg-black/50 text-white p-2 rounded-full hover:bg-lime-400 transition-all"
-                              >
-                                <ChevronRight size={20}/>
-                              </button>
-
-                              {/* Dots Indicator */}
-                              <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex space-x-2">
-                                {product.images.map((_, index) => (
-                                    <button
-                                        key={index}
-                                        onClick={() => setCurrentImageIndex(prev => ({...prev, [product.id]: index}))}
-                                        className={`w-2 h-2 rounded-full transition-all ${
-                                            index === currentIndex ? 'bg-lime-400' : 'bg-black/50'
-                                        }`}
-                                    />
-                                ))}
-                              </div>
-                            </>
-                        )}
-                      </div>
-                      <div className="p-6">
-                        <h3 className="text-xl font-bold mb-2 text-white">{product.name}</h3>
-                        <p className="text-gray-400 text-sm mb-4">{product.description}</p>
-
-                        {/* Taglie disponibili */}
-                        <div className="mb-4">
-                          <p className="text-gray-300 mb-2 text-sm">Taglie disponibili:</p>
-                          <div className="flex flex-wrap gap-2">
-                            {product.sizes.map(size => (
-                                <button
-                                    key={size}
-                                    onClick={() => handleSizeSelection(product.id, size)}
-                                    className={`px-3 py-1 rounded-full border text-sm font-medium transition-all ${
-                                        selectedSize === size
-                                            ? "bg-lime-400 text-black border-lime-400"
-                                            : "border-gray-600 text-gray-300 hover:border-lime-400 hover:text-lime-400"
-                                    }`}
-                                >
-                                  {size}
-                                </button>
-                            ))}
+                        <div className="absolute right-4 top-4 flex flex-col items-end gap-2">
+                          <div className="bg-lime-400 px-3 py-2 text-[10px] font-black uppercase tracking-[0.18em] text-black">
+                            {product.color}
+                          </div>
+                          <div className="bg-black/90 px-3 py-2 text-[9px] font-black uppercase tracking-[0.16em] text-white">
+                            {productAvailableStock} disponibili
                           </div>
                         </div>
 
-                        <div className="flex justify-between items-center">
-                <span className="text-2xl font-black text-lime-400">
-                  €{product.price.toFixed(2)}
+                        {product.images.length > 1 && (
+                          <>
+                            <button
+                              onClick={() =>
+                                prevImage(product.id, product.images.length)
+                              }
+                              className="absolute left-3 top-1/2 grid h-10 w-10 -translate-y-1/2 place-items-center bg-black text-white transition hover:bg-lime-400 hover:text-black"
+                              aria-label="Immagine precedente"
+                            >
+                              <ChevronLeft size={20} />
+                            </button>
+                            <button
+                              onClick={() =>
+                                nextImage(product.id, product.images.length)
+                              }
+                              className="absolute right-3 top-1/2 grid h-10 w-10 -translate-y-1/2 place-items-center bg-black text-white transition hover:bg-lime-400 hover:text-black"
+                              aria-label="Immagine successiva"
+                            >
+                              <ChevronRight size={20} />
+                            </button>
+                            <div className="absolute bottom-4 left-1/2 flex -translate-x-1/2 gap-2">
+                              {product.images.map((_, index) => (
+                                <button
+                                  key={index}
+                                  onClick={() =>
+                                    setCurrentImageIndex((previous) => ({
+                                      ...previous,
+                                      [product.id]: index,
+                                    }))
+                                  }
+                                  className={`h-1.5 transition-all ${
+                                    index === currentIndex
+                                      ? "w-8 bg-lime-400"
+                                      : "w-4 bg-black/35"
+                                  }`}
+                                  aria-label={`Mostra immagine ${index + 1}`}
+                                />
+                              ))}
+                            </div>
+                          </>
+                        )}
+                      </div>
+
+                      <div className="p-5 sm:p-7">
+                        <div className="flex items-start justify-between gap-6">
+                          <div>
+                            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-lime-400">
+                              LNH x Chuck
+                            </p>
+                            <h3 className="mt-2 text-2xl font-black uppercase tracking-[-0.025em]">
+                              Boxy Fit Tee / {product.color}
+                            </h3>
+                          </div>
+                          <p className="shrink-0 text-2xl font-black text-lime-400">
+                            €{product.price.toFixed(2)}
+                          </p>
+                        </div>
+
+                        <p className="mt-4 text-sm leading-relaxed text-white/55">
+                          {product.description}
+                        </p>
+
+                        <div className="mt-6 flex flex-wrap gap-2">
+                          <span className="border border-white/15 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.16em] text-white/70">
+                            Boxy fit
+                          </span>
+                          <span className="border border-white/15 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.16em] text-white/70">
+                            Event exclusive
+                          </span>
+                          <span className="border border-lime-400/40 bg-lime-400/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.16em] text-lime-400">
+                            Custom gratuita
+                          </span>
+                        </div>
+
+                        <div className="mt-7">
+                          <div className="mb-3 flex items-center justify-between">
+                            <p className="text-xs font-black uppercase tracking-[0.16em] text-white/70">
+                              Scegli la taglia
+                            </p>
+                            <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-white/35">
+                              S · M · L · XL · XXL
+                            </p>
+                          </div>
+                          <div className="grid grid-cols-5 gap-2">
+                            {product.sizes.map((size) => {
+                              const available = getAvailableStock(
+                                product.id,
+                                size,
+                              );
+                              const isSoldOut = available <= 0;
+
+                              return (
+                                <button
+                                  key={size}
+                                  disabled={isSoldOut}
+                                  onClick={() =>
+                                    handleSizeSelection(product.id, size)
+                                  }
+                                  className={`min-h-[58px] border px-1 py-2 text-xs font-black transition ${
+                                    isSoldOut
+                                      ? "cursor-not-allowed border-white/5 bg-white/[0.02] text-white/20 line-through"
+                                      : selectedSize === size
+                                        ? "border-lime-400 bg-lime-400 text-black"
+                                        : "border-white/15 bg-white/[0.03] text-white hover:border-white/50"
+                                  }`}
+                                >
+                                  <span className="block">{size}</span>
+                                  <span
+                                    className={`mt-1 block text-[9px] font-bold no-underline ${
+                                      selectedSize === size && !isSoldOut
+                                        ? "text-black/60"
+                                        : "text-white/35"
+                                    }`}
+                                  >
+                                    {isSoldOut
+                                      ? "sold out"
+                                      : `${available} rim.`}
+                                  </span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        <button
+                          disabled={
+                            !eventSettings.reservationOpen ||
+                            !selectedSize ||
+                            selectedSizeAvailable <= 0
+                          }
+                          onClick={() => addToCart(product)}
+                          className={`mt-6 w-full py-4 text-sm font-black uppercase tracking-[0.14em] transition ${
+                            eventSettings.reservationOpen &&
+                            selectedSize &&
+                            selectedSizeAvailable > 0
+                              ? "bg-lime-400 text-black hover:bg-lime-300"
+                              : "cursor-not-allowed bg-white/5 text-white/25"
+                          }`}
+                        >
+                          {!eventSettings.reservationOpen
+                            ? "Prenotazioni chiuse"
+                            : !selectedSize
+                              ? "Seleziona una taglia"
+                              : selectedSizeAvailable > 0
+                                ? `Prenota taglia ${selectedSize} · ${selectedSizeAvailable} disponibili`
+                                : `Taglia ${selectedSize} esaurita`}
+                        </button>
+                      </div>
+                    </article>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </section>
+
+        <section className="relative overflow-hidden border-y border-white/10 bg-lime-400 text-black">
+          <div className="absolute -right-20 -top-24 h-72 w-72 rounded-full border-[44px] border-black/[0.06]" />
+          <div className="mx-auto grid max-w-7xl gap-10 px-4 py-14 sm:px-6 md:grid-cols-[1fr_auto] md:items-center lg:px-8 lg:py-16">
+            <div className="relative z-10">
+              <div className="mb-4 inline-flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.24em]">
+                <Instagram size={16} /> Official event Instagram
+              </div>
+              <h2 className="max-w-3xl text-4xl font-black uppercase leading-[0.95] tracking-[-0.045em] sm:text-5xl">
+                Il drop vive allo stand.
+                <br />
+                <span className="text-black/55">
+                  L'evento continua su Instagram.
                 </span>
+              </h2>
+              <p className="mt-5 max-w-2xl text-sm font-semibold leading-relaxed text-black/65 sm:text-base">
+                Per aggiornamenti dell'evento, contenuti dal playground, novità
+                sul merch e comunicazioni live, il riferimento ufficiale è{" "}
+                {eventSettings.eventInstagramHandle}.
+              </p>
+            </div>
+
+            <a
+              href={eventSettings.eventInstagramUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="relative z-10 inline-flex min-w-[245px] items-center justify-center gap-3 border-2 border-black bg-black px-7 py-4 text-sm font-black uppercase tracking-[0.13em] text-lime-400 transition hover:bg-transparent hover:text-black"
+            >
+              <Instagram size={20} />
+              Apri {eventSettings.eventInstagramHandle}
+            </a>
+          </div>
+        </section>
+
+        <section className="border-y border-white/10 bg-black py-20">
+          <div className="mx-auto grid max-w-7xl gap-12 px-4 sm:px-6 md:grid-cols-[0.8fr_1.2fr] lg:px-8">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.28em] text-lime-400">
+                How it works
+              </p>
+              <h2 className="mt-4 text-4xl font-black uppercase leading-none tracking-[-0.04em] sm:text-5xl">
+                Prenota qui.
+                <br />
+                Finisci tutto allo stand.
+              </h2>
+            </div>
+
+            <div className="grid gap-px bg-white/10 sm:grid-cols-3">
+              {[
+                [
+                  "01",
+                  "Prenota",
+                  "Scegli colore e taglia e lascia i tuoi dati.",
+                ],
+                [
+                  "02",
+                  "Ritira & paga",
+                  "Mostra il codice prenotazione e paga direttamente allo stand.",
+                ],
+                [
+                  "03",
+                  "Customizza gratis",
+                  "Personalizza gratuitamente la tee direttamente allo stand.",
+                ],
+              ].map(([number, title, copy]) => (
+                <div key={number} className="bg-black p-6 sm:p-7">
+                  <p className="text-4xl font-black text-lime-400">{number}</p>
+                  <h3 className="mt-6 text-lg font-black uppercase tracking-tight">
+                    {title}
+                  </h3>
+                  <p className="mt-3 text-sm leading-relaxed text-white/50">
+                    {copy}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      </main>
+
+      {!isCartOpen && (
+        <button
+          onClick={() => setIsCartOpen(true)}
+          className="fixed bottom-5 right-5 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-lime-400 text-black shadow-2xl shadow-lime-400/30 ring-1 ring-black/20 transition hover:bg-lime-300 active:scale-95 md:hidden"
+          aria-label="Apri prenotazione"
+        >
+          <ShoppingCart size={23} strokeWidth={2.5} />
+          {totalItems > 0 && (
+            <span className="absolute -right-1 -top-1 flex h-6 min-w-6 items-center justify-center rounded-full bg-white px-1.5 text-xs font-black text-black shadow-lg">
+              {totalItems}
+            </span>
+          )}
+        </button>
+      )}
+
+      <footer className="border-t border-white/10 bg-[#070707] py-12">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="grid gap-8 md:grid-cols-[1fr_auto] md:items-end">
+            <div>
+              <p className="text-3xl font-black tracking-tight">
+                LATE NIGHT <span className="text-lime-400">HOOP</span>
+              </p>
+              <p className="mt-2 max-w-lg text-sm leading-relaxed text-white/40">
+                Event merch, playground culture e community. Prenota online,
+                ritira e paga allo stand.
+              </p>
+              <a
+                href={eventSettings.eventInstagramUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-5 inline-flex items-center gap-2 text-xs font-black uppercase tracking-[0.16em] text-white/65 transition hover:text-lime-400"
+              >
+                <Instagram size={16} />
+                {eventSettings.eventInstagramHandle}
+              </a>
+            </div>
+
+            <a
+              href={eventSettings.developerInstagramUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="group border border-white/10 bg-white/[0.025] px-5 py-4 transition hover:border-lime-400/60 hover:bg-lime-400/[0.06]"
+              aria-label="Instagram dello sviluppatore"
+            >
+              <p className="text-[9px] font-black uppercase tracking-[0.24em] text-white/35">
+                Website design & development
+              </p>
+              <div className="mt-2 flex items-center gap-2">
+                <Instagram size={17} className="text-lime-400" />
+                <span className="text-sm font-black text-white transition group-hover:text-lime-400">
+                  {eventSettings.developerInstagramHandle}
+                </span>
+              </div>
+            </a>
+          </div>
+
+          <div className="mt-10 border-t border-white/10 pt-5 text-[10px] font-bold uppercase tracking-[0.16em] text-white/25">
+            Late Night Hoop · Event Drop
+          </div>
+        </div>
+      </footer>
+
+      {isCartOpen && (
+        <div className="fixed inset-0 z-50">
+          <button
+            className="absolute inset-0 h-full w-full bg-black/75 backdrop-blur-sm"
+            onClick={() => setIsCartOpen(false)}
+            aria-label="Chiudi prenotazione"
+          />
+
+          <aside className="absolute right-0 top-0 flex h-full w-full max-w-md flex-col border-l border-lime-400/40 bg-[#090909] shadow-2xl">
+            <div className="flex items-center justify-between border-b border-white/10 px-5 py-5 sm:px-6">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-lime-400">
+                  Event pick-up
+                </p>
+                <h3 className="mt-1 text-2xl font-black uppercase">
+                  La tua prenotazione
+                </h3>
+              </div>
+              <button
+                onClick={() => setIsCartOpen(false)}
+                className="grid h-10 w-10 place-items-center border border-white/15 text-white transition hover:border-lime-400 hover:text-lime-400"
+                aria-label="Chiudi"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-5 py-5 sm:px-6">
+              {cart.length === 0 ? (
+                <div className="flex min-h-[50vh] flex-col items-center justify-center text-center">
+                  <ShoppingCart size={36} className="text-white/20" />
+                  <p className="mt-4 font-black uppercase">Ancora vuota.</p>
+                  <p className="mt-2 max-w-xs text-sm text-white/40">
+                    Scegli colore e taglia dal drop per iniziare la
+                    prenotazione.
+                  </p>
+                  <button
+                    onClick={() => {
+                      setIsCartOpen(false);
+                      window.setTimeout(scrollToDrop, 150);
+                    }}
+                    className="mt-6 bg-lime-400 px-5 py-3 text-xs font-black uppercase tracking-[0.14em] text-black"
+                  >
+                    Vai al drop
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <div className="space-y-3">
+                    {cart.map((item) => (
+                      <div
+                        key={`${item.id}-${item.size}`}
+                        className="grid grid-cols-[72px_1fr_auto] gap-3 border border-white/10 bg-black p-3"
+                      >
+                        <img
+                          src={item.images[0]}
+                          alt={item.name}
+                          className="h-[72px] w-[72px] object-cover"
+                        />
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-black">
+                            {item.name}
+                          </p>
+                          <p className="mt-1 text-xs text-white/45">
+                            {item.color} · Taglia {item.size}
+                          </p>
+                          <p className="mt-2 text-sm font-black text-lime-400">
+                            €{item.price.toFixed(2)}
+                          </p>
+                        </div>
+                        <div className="flex flex-col items-center justify-center gap-1">
                           <button
-                              disabled={!selectedSize}
-                              onClick={() => addToCart(product)}
-                              className={`px-6 py-2 rounded-full font-bold transform transition-all ${
-                                  selectedSize
-                                      ? "bg-lime-400 text-black hover:bg-lime-300 hover:scale-105"
-                                      : "bg-gray-700 text-gray-400 cursor-not-allowed"
-                              }`}
+                            onClick={() =>
+                              updateQuantity(item.id, item.size, 1)
+                            }
+                            disabled={
+                              item.quantity >=
+                              getVariantStock(item.id, item.size)
+                            }
+                            className={`grid h-7 w-7 place-items-center border transition ${
+                              item.quantity >=
+                              getVariantStock(item.id, item.size)
+                                ? "cursor-not-allowed border-white/5 text-white/15"
+                                : "border-white/15 text-white hover:border-lime-400"
+                            }`}
+                            aria-label="Aumenta quantità"
                           >
-                            AGGIUNGI
+                            <Plus size={14} />
+                          </button>
+                          <span className="text-xs font-black">
+                            {item.quantity}
+                          </span>
+                          <button
+                            onClick={() =>
+                              updateQuantity(item.id, item.size, -1)
+                            }
+                            className="grid h-7 w-7 place-items-center border border-white/15 text-white hover:border-red-500 hover:text-red-400"
+                            aria-label="Riduci quantità"
+                          >
+                            <Minus size={14} />
                           </button>
                         </div>
                       </div>
-                    </div>
-                );
-              })}
-            </div>
-          </div>
-        </section>
-
-        {/* Cart Sidebar */}
-        {isCartOpen && (
-            <div className="fixed inset-0 z-50 flex">
-              <div
-                  className="absolute inset-0 bg-black/70 transition-opacity duration-300 ease-in-out"
-                  onClick={() => setIsCartOpen(false)}
-              ></div>
-              <div
-                  className={`ml-auto w-96 bg-gray-900 h-full overflow-y-auto border-l-2 border-lime-400 transform transition-transform duration-500 ease-out ${
-                      isCartOpen ? 'translate-x-0' : 'translate-x-full'
-                  }`}>
-                <div className="p-6">
-                  <div className="flex justify-between items-center mb-6">
-                    <h3 className="text-2xl font-black text-lime-400">CARRELLO</h3>
-                    <button
-                        onClick={() => setIsCartOpen(false)}
-                        className="text-white hover:text-lime-400 text-2xl transition-colors duration-200 hover:rotate-90 transform"
-                    >
-                      ×
-                    </button>
+                    ))}
                   </div>
 
-                  {cart.length === 0 ? (
-                      <p className="text-gray-400 text-center py-8">Il tuo carrello è vuoto</p>
-                  ) : (
-                      <>
-                        {cart.map((item, index) => (
-                            <div
-                                key={`${item.id}-${item.size}`}
-                                className={`flex items-center space-x-4 mb-4 p-4 bg-black rounded-lg border border-gray-700 transform transition-all duration-300 ease-out ${
-                                    isCartOpen ? 'translate-x-0 opacity-100' : 'translate-x-full opacity-0'
-                                }`}
-                                style={{transitionDelay: `${index * 100}ms`}}
-                            >
-                              <img src={item.images[0]} alt={item.name} className="w-16 h-16 object-cover rounded"/>
-                              <div className="flex-1">
-                                <h4 className="font-bold text-white text-sm">{item.name}</h4>
-                                <p className="text-sm text-gray-400">Taglia: {item.size}</p>
-                                <p className="text-lime-400 font-bold">€{item.price.toFixed(2)}</p>
-                              </div>
-                              <div className="flex items-center space-x-2">
-                                <button
-                                    onClick={() => updateQuantity(item.id, item.size, -1)}
-                                    className="bg-red-500 text-white w-8 h-8 rounded-full flex items-center justify-center hover:bg-red-400 transition-colors duration-200 hover:scale-110 transform"
-                                >
-                                  <Minus size={16}/>
-                                </button>
-                                <span className="w-8 text-center font-bold text-white">{item.quantity}</span>
-                                <button
-                                    onClick={() => updateQuantity(item.id, item.size, 1)}
-                                    className="bg-lime-400 text-black w-8 h-8 rounded-full flex items-center justify-center hover:bg-lime-300 transition-colors duration-200 hover:scale-110 transform"
-                                >
-                                  <Plus size={16}/>
-                                </button>
-                              </div>
-                            </div>
-                        ))}
+                  <div className="my-5 grid grid-cols-2 gap-2">
+                    <div className="border border-lime-400/25 bg-lime-400/[0.06] p-3">
+                      <Banknote size={18} className="text-lime-400" />
+                      <p className="mt-2 text-[10px] font-black uppercase tracking-[0.12em] text-lime-400">
+                        Pagamento
+                      </p>
+                      <p className="mt-1 text-xs text-white/55">
+                        Solo allo stand
+                      </p>
+                    </div>
+                    <div className="border border-lime-400/25 bg-lime-400/[0.06] p-3">
+                      <Paintbrush size={18} className="text-lime-400" />
+                      <p className="mt-2 text-[10px] font-black uppercase tracking-[0.12em] text-lime-400">
+                        Custom
+                      </p>
+                      <p className="mt-1 text-xs text-white/55">
+                        Gratuita allo stand
+                      </p>
+                    </div>
+                  </div>
 
-                        <div
-                            className={`border-t border-gray-700 pt-4 mt-6 transform transition-all duration-500 ease-out ${
-                                isCartOpen ? 'translate-x-0 opacity-100' : 'translate-x-full opacity-0'
+                  <div className="border-t border-white/10 pt-5">
+                    <div className="mb-5 flex items-end justify-between">
+                      <div>
+                        <p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/35">
+                          Totale da pagare allo stand
+                        </p>
+                        <p className="mt-1 text-xs text-white/45">
+                          Nessun addebito online
+                        </p>
+                      </div>
+                      <p className="text-3xl font-black text-lime-400">
+                        €{totalPrice.toFixed(2)}
+                      </p>
+                    </div>
+
+                    {!showCheckoutForm ? (
+                      <button
+                        onClick={() => setShowCheckoutForm(true)}
+                        className="w-full bg-lime-400 py-4 text-sm font-black uppercase tracking-[0.14em] text-black hover:bg-lime-300"
+                      >
+                        Inserisci i dati
+                      </button>
+                    ) : (
+                      <div className="space-y-3">
+                        <p className="pb-1 text-xs font-black uppercase tracking-[0.16em] text-white/60">
+                          Dati per il ritiro
+                        </p>
+
+                        <Field icon={<User size={17} />}>
+                          <input
+                            type="text"
+                            placeholder="Nome *"
+                            value={customerInfo.nome}
+                            onChange={(event) =>
+                              handleCustomerInfoChange(
+                                "nome",
+                                event.target.value,
+                              )
+                            }
+                            className="field-input"
+                          />
+                        </Field>
+
+                        <Field icon={<User size={17} />}>
+                          <input
+                            type="text"
+                            placeholder="Cognome *"
+                            value={customerInfo.cognome}
+                            onChange={(event) =>
+                              handleCustomerInfoChange(
+                                "cognome",
+                                event.target.value,
+                              )
+                            }
+                            className="field-input"
+                          />
+                        </Field>
+
+                        <Field icon={<Phone size={17} />}>
+                          <input
+                            type="tel"
+                            placeholder="Telefono *"
+                            value={customerInfo.telefono}
+                            onChange={(event) =>
+                              handleCustomerInfoChange(
+                                "telefono",
+                                event.target.value,
+                              )
+                            }
+                            className="field-input"
+                          />
+                        </Field>
+                        {customerInfo.telefono && !isPhoneValid && (
+                          <p className="text-xs text-red-400">
+                            Inserisci un numero di telefono valido.
+                          </p>
+                        )}
+
+                        <Field icon={<Mail size={17} />}>
+                          <input
+                            type="email"
+                            placeholder="Email (opzionale)"
+                            value={customerInfo.email}
+                            onChange={(event) =>
+                              handleCustomerInfoChange(
+                                "email",
+                                event.target.value,
+                              )
+                            }
+                            className="field-input"
+                          />
+                        </Field>
+                        {customerInfo.email && !isEmailValid && (
+                          <p className="text-xs text-red-400">
+                            Controlla il formato dell'email.
+                          </p>
+                        )}
+
+                        <label className="flex cursor-pointer items-start gap-3 border border-white/10 bg-white/[0.025] p-3 text-xs leading-relaxed text-white/55">
+                          <input
+                            type="checkbox"
+                            checked={acceptedTerms}
+                            onChange={(event) =>
+                              setAcceptedTerms(event.target.checked)
+                            }
+                            className="mt-0.5 h-4 w-4 accent-lime-400"
+                          />
+                          <span>
+                            Confermo che questa è una prenotazione senza
+                            pagamento online. Ritiro e pagamento avverranno
+                            esclusivamente presso lo stand durante l'evento.
+                          </span>
+                        </label>
+
+                        {submitError && (
+                          <div className="border border-red-500/30 bg-red-500/10 p-3 text-xs leading-relaxed text-red-300">
+                            {submitError}
+                          </div>
+                        )}
+
+                        <div className="grid grid-cols-[0.8fr_1.2fr] gap-2 pt-1">
+                          <button
+                            onClick={() => setShowCheckoutForm(false)}
+                            className="border border-white/15 py-3 text-xs font-black uppercase tracking-[0.12em] text-white hover:border-white/40"
+                          >
+                            Indietro
+                          </button>
+                          <button
+                            onClick={completeOrder}
+                            disabled={!isFormValid || isSubmitting}
+                            className={`py-3 text-xs font-black uppercase tracking-[0.12em] transition ${
+                              isFormValid && !isSubmitting
+                                ? "bg-lime-400 text-black hover:bg-lime-300"
+                                : "cursor-not-allowed bg-white/5 text-white/25"
                             }`}
-                            style={{transitionDelay: `${cart.length * 100 + 200}ms`}}
-                        >
-                          <div className="flex justify-between items-center mb-4">
-                            <span className="text-xl font-bold text-white">TOTALE:</span>
-                            <span className="text-2xl font-black text-lime-400">€{getTotalPrice().toFixed(2)}</span>
-                          </div>
-
-                          <div className="bg-gray-800 p-3 rounded-lg mb-4 border border-lime-400/30">
-                            <p className="text-sm text-lime-400 font-bold">💵 PAGAMENTO IN CONTANTI</p>
-                            <p className="text-xs text-gray-400">Pagherai direttamente al momento del ritiro</p>
-                          </div>
-
-                          {!showCheckoutForm ? (
-                              <button
-                                  onClick={() => setShowCheckoutForm(true)}
-                                  className="w-full bg-lime-400 text-black py-4 rounded-lg font-black text-lg hover:bg-lime-300 transition-all duration-200 transform hover:scale-105"
-                              >
-                                PROCEDI AL CHECKOUT
-                              </button>
-                          ) : (
-                              <div className="space-y-4">
-                                <h4 className="text-lg font-bold text-white mb-3">I tuoi dati per l'ordine</h4>
-
-                                <div className="space-y-3">
-                                  <div className="relative">
-                                    <User className="absolute left-3 top-3 text-gray-400" size={18}/>
-                                    <input
-                                        type="text"
-                                        placeholder="Nome *"
-                                        value={customerInfo.nome}
-                                        onChange={(e) => handleCustomerInfoChange('nome', e.target.value)}
-                                        className="w-full bg-black border border-gray-600 rounded-lg py-3 pl-10 pr-4 text-white placeholder-gray-400 focus:border-lime-400 focus:outline-none"
-                                    />
-                                  </div>
-
-                                  <div className="relative">
-                                    <User className="absolute left-3 top-3 text-gray-400" size={18}/>
-                                    <input
-                                        type="text"
-                                        placeholder="Cognome *"
-                                        value={customerInfo.cognome}
-                                        onChange={(e) => handleCustomerInfoChange('cognome', e.target.value)}
-                                        className="w-full bg-black border border-gray-600 rounded-lg py-3 pl-10 pr-4 text-white placeholder-gray-400 focus:border-lime-400 focus:outline-none"
-                                    />
-                                  </div>
-
-                                  <div className="relative">
-                                    <Phone className="absolute left-3 top-3 text-gray-400" size={18}/>
-                                    <input
-                                        type="tel"
-                                        placeholder="Numero di telefono *"
-                                        value={customerInfo.telefono}
-                                        onChange={(e) => handleCustomerInfoChange('telefono', e.target.value)}
-                                        className="w-full bg-black border border-gray-600 rounded-lg py-3 pl-10 pr-4 text-white placeholder-gray-400 focus:border-lime-400 focus:outline-none"
-                                    />
-                                  </div>
-
-                                  <div className="relative">
-                                    <Mail className="absolute left-3 top-3 text-gray-400" size={18}/>
-                                    <input
-                                        type="email"
-                                        placeholder="Email (opzionale)"
-                                        value={customerInfo.email}
-                                        onChange={(e) => handleCustomerInfoChange('email', e.target.value)}
-                                        className="w-full bg-black border border-gray-600 rounded-lg py-3 pl-10 pr-4 text-white placeholder-gray-400 focus:border-lime-400 focus:outline-none"
-                                    />
-                                  </div>
-                                </div>
-
-                                <div className="flex items-start space-x-2 text-sm text-gray-300">
-                                  <input
-                                      type="checkbox"
-                                      id="terms"
-                                      checked={acceptedTerms}
-                                      onChange={(e) => setAcceptedTerms(e.target.checked)}
-                                      className="mt-1 accent-lime-400 w-4 h-4"
-                                  />
-                                  <label htmlFor="terms" className="leading-snug cursor-pointer">
-                                    Accetto i termini e
-                                    condizioni di vendita
-                                  </label>
-                                </div>
-
-                                <div className="flex space-x-2 pt-2">
-                                  <button
-                                      onClick={() => setShowCheckoutForm(false)}
-                                      className="flex-1 bg-gray-700 text-white py-3 rounded-lg font-bold hover:bg-gray-600 transition-all"
-                                  >
-                                    INDIETRO
-                                  </button>
-                                  <button
-                                      onClick={completeOrder}
-                                      disabled={!isFormValid() || !acceptedTerms}
-                                      className={`flex-1 py-3 rounded-lg font-bold transition-all transform ${
-                                          isFormValid()
-                                              ? 'bg-lime-400 text-black hover:bg-lime-300 hover:scale-105'
-                                              : 'bg-gray-600 text-gray-400 cursor-not-allowed'
-                                      }`}
-                                  >
-                                    CONFERMA ORDINE
-                                  </button>
-                                </div>
-                              </div>
-                          )}
+                          >
+                            {isSubmitting
+                              ? "Invio..."
+                              : "Conferma prenotazione"}
+                          </button>
                         </div>
-                      </>
-                  )}
-                </div>
-              </div>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
-        )}
+          </aside>
+        </div>
+      )}
 
-        {/* Order Confirmation Modal */}
-        {orderCompleted && (
-            <div className="fixed inset-0 z-60 flex items-center justify-center">
-              <div className="absolute inset-0 bg-black/80"></div>
-              <div
-                  className="relative bg-gray-900 p-8 rounded-2xl border-2 border-lime-400 max-w-md mx-4 text-center transform animate-pulse">
-                <CheckCircle className="mx-auto text-lime-400 mb-4" size={64}/>
-                <h3 className="text-2xl font-black text-white mb-2">ORDINE CONFERMATO!</h3>
-                <p className="text-lime-400 font-bold text-lg mb-2">Ordine #{orderNumber}</p>
-                <p className="text-gray-300 text-sm mb-4">
-                  Ti contatteremo a breve per organizzare il ritiro dei tuoi prodotti!
-                </p>
-                <div className="bg-black/50 p-3 rounded-lg">
-                  <p className="text-xs text-gray-400">Questo messaggio si chiuderà automaticamente...</p>
-                </div>
-              </div>
-            </div>
-        )}
-
-        {addedToCart && (
-            <div className="fixed inset-0 z-60 flex items-center justify-center">
-              <div className="absolute inset-0 bg-black/80"></div>
-              <div className="relative bg-gray-900 p-8 rounded-2xl border-2 border-lime-400 max-w-md mx-4 text-center transform animate-pulse">
-                <img src={'./basket.png'} className="mx-auto text-lime-400 mb-4" width={64} />
-                <h3 className="text-2xl font-black text-lime-400 mb-2">PRODOTTO AGGIUNTO!</h3>
-                <p className="text-white font-semibold text-lg mb-2">Il prodotto è stato aggiunto nel tuo carrello.</p>
-                <p className="text-gray-300 text-sm mb-4">
-                  Puoi continuare a fare acquisti o procedere al checkout.
-                </p>
-                <div className="bg-black/50 p-3 rounded-lg">
-                  <p className="text-xs text-gray-400">Questo messaggio si chiuderà automaticamente...</p>
-                </div>
-              </div>
-            </div>
-        )}
-
-
-        {/* Footer */}
-        <footer className="bg-black border-t-2 border-lime-400 py-12">
-          <div className="container mx-auto px-4">
-            <div className="text-center">
-              <div className="text-4xl font-black text-lime-400 mb-4">
-                LATE NIGHT <span className="text-white">HOOP</span>
-              </div>
-              <p className="text-gray-400 mb-6">
-                Il playground non dorme mai. Nemmeno noi.
+      {orderCompleted && (
+        <div className="fixed inset-0 z-[60] grid place-items-center bg-black/85 px-4 backdrop-blur-sm">
+          <div className="w-full max-w-md border border-lime-400 bg-[#0a0a0a] p-7 text-center shadow-[0_0_80px_rgba(163,230,53,0.12)] sm:p-9">
+            <CheckCircle
+              className="mx-auto text-lime-400"
+              size={54}
+              strokeWidth={1.7}
+            />
+            <p className="mt-5 text-[10px] font-black uppercase tracking-[0.26em] text-lime-400">
+              Reservation confirmed
+            </p>
+            <h3 className="mt-2 text-3xl font-black uppercase tracking-[-0.03em]">
+              Prenotazione ricevuta
+            </h3>
+            <div className="mx-auto mt-5 inline-block border border-white/15 bg-black px-5 py-3">
+              <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-white/35">
+                Codice ritiro
               </p>
-              <div className="mt-2 text-sm text-gray-200">
-                Sito sviluppato da <a href="https://www.instagram.com/mattiacucuzza_/" target="_blank" className="text-lime-400 hover:underline">Mattia Cucuzza </a>
-              </div>
+              <p className="mt-1 text-2xl font-black text-lime-400">
+                {orderNumber}
+              </p>
+            </div>
+            <p className="mx-auto mt-5 max-w-sm text-sm leading-relaxed text-white/55">
+              Conserva questo codice. Ritira e paga la tua tee allo stand. La
+              personalizzazione è gratuita e puoi farla direttamente lì.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {addedToCart && (
+        <div className="pointer-events-none fixed bottom-5 left-1/2 z-[55] w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 border border-lime-400/50 bg-black/95 p-4 shadow-2xl backdrop-blur sm:left-auto sm:right-5 sm:translate-x-0">
+          <div className="flex items-center gap-3">
+            <CheckCircle size={22} className="shrink-0 text-lime-400" />
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.14em] text-lime-400">
+                Aggiunta alla prenotazione
+              </p>
+              <p className="mt-1 text-xs text-white/50">
+                Puoi continuare con un'altra variante o aprire il riepilogo.
+              </p>
             </div>
           </div>
-        </footer>
-
-      </div>
+        </div>
+      )}
+    </div>
   );
 };
 
+const Field: React.FC<{ icon: React.ReactNode; children: React.ReactNode }> = ({
+  icon,
+  children,
+}) => (
+  <div className="relative">
+    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-white/35">
+      {icon}
+    </span>
+    {children}
+  </div>
+);
+
 export default App;
+
+// w7nbUhRk8s7qYVVF

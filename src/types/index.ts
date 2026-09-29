@@ -1,21 +1,57 @@
+export type TeeSize = 'S' | 'M' | 'L' | 'XL' | 'XXL';
+
+export interface ProductVariant {
+  id: number;
+  productId: number;
+  size: TeeSize;
+  stock: number;
+  active: boolean;
+  sortOrder: number;
+}
+
 export interface Product {
-    id: number;
-    name: string;
-    price: number;
-    images: string[];
-    sizes: string[]; // <- tutte le taglie disponibili
-    description: string;
+  id: number;
+  slug: string;
+  name: string;
+  color: 'Black' | 'White';
+  price: number;
+  images: string[];
+  sizes: TeeSize[];
+  variants: ProductVariant[];
+  description: string;
+  badge?: string;
+  customizable?: boolean;
 }
 
 export interface CartItem extends Product {
-    quantity: number;
-    size: string; // <- la taglia selezionata per il carrello
+  quantity: number;
+  size: TeeSize;
+  variantId: number;
 }
 
-
 export interface CustomerInfo {
-    nome: string;
-    cognome: string;
-    telefono: string;
-    email: string;
+  nome: string;
+  cognome: string;
+  telefono: string;
+  email: string;
+}
+
+export interface EventSettings {
+  id: number;
+  eventName: string;
+  eventInstagramHandle: string;
+  eventInstagramUrl: string;
+  developerInstagramHandle: string;
+  developerInstagramUrl: string;
+  pickupCopy: string;
+  customizationCopy: string;
+  reservationOpen: boolean;
+  initialStock: number;
+}
+
+export interface ReservationResult {
+  orderId: string;
+  orderNumber: string;
+  totalCents: number;
+  notificationSent: boolean;
 }

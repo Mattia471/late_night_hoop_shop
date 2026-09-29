@@ -1,0 +1,5 @@
+# Aggiungi queste righe al tuo .gitignore esistente
+.env
+.env.local
+.env.*.local
+supabase/functions/.env

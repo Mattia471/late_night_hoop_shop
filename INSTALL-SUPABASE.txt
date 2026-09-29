@@ -1,0 +1,8 @@
+1) npm install @supabase/supabase-js@2
+2) Copia .env.example in .env.local e inserisci URL + publishable key.
+3) Esegui supabase/schema.sql nel SQL Editor.
+4) Esegui supabase/seed.sql nel SQL Editor.
+5) Deploya supabase/functions/create-order/index.ts come Edge Function create-order.
+6) Riavvia il frontend.
+
+Guida completa: README-SUPABASE.md
