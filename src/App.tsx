@@ -992,8 +992,9 @@ const App: React.FC = () => {
               <div className="flex gap-3">
                 <ShieldCheck size={21} className="mt-0.5 shrink-0 text-lime-400" />
                 <p className="text-xs leading-relaxed text-white/60">
-                  <strong className="text-white">Salva questo QR sul telefono.</strong> Mostralo allo staff al momento del ritiro.
-                  Il QR è personale e non va condiviso.
+                  <strong className="text-white">Fai uno screenshot e conserva il QR nelle Foto.</strong>{' '}
+                  Su iPhone il download dell'immagine potrebbe non salvarsi correttamente: lo screenshot è il metodo consigliato.
+                  Mostra questo QR allo staff al momento del ritiro. Il QR è personale e non va condiviso.
                 </p>
               </div>
             </div>
@@ -1006,14 +1007,14 @@ const App: React.FC = () => {
                   className="flex w-full items-center justify-center gap-2 bg-lime-400 py-4 text-xs font-black uppercase tracking-[0.14em] text-black transition hover:bg-lime-300"
                 >
                   <Download size={17} />
-                  Salva QR
+                  Scarica QR
                 </a>
               )}
               <button
                 onClick={closeOrderConfirmation}
                 className="w-full border border-white/15 py-3 text-xs font-black uppercase tracking-[0.14em] text-white transition hover:border-white/40"
               >
-                Ho salvato il QR · chiudi
+                Ho fatto lo screenshot · chiudi
               </button>
             </div>
 
