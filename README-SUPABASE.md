@@ -217,3 +217,22 @@ Il browser non modifica direttamente `product_variants.stock`.
 La Edge Function chiama `create_event_order`, che esegue nel database un'unica transazione e blocca (`FOR UPDATE`) le righe delle varianti coinvolte. Se due utenti tentano di prenotare contemporaneamente l'ultimo pezzo della stessa taglia, solo la prima transazione che trova stock sufficiente viene confermata.
 
 Il frontend riceve poi l'aggiornamento tramite Supabase Realtime e aggiorna il counting senza refresh della pagina.
+
+
+## QR di ritiro
+
+La v7 aggiunge il QR personale per ogni prenotazione e una schermata staff protetta da PIN.
+
+Vedi `README-QR-RITIRO.md`.
+
+Comandi aggiuntivi:
+
+```bash
+pnpm add qrcode
+pnpm add -D @types/qrcode
+pnpm supabase secrets set STAND_PICKUP_PIN=IL_TUO_PIN
+pnpm supabase functions deploy create-order
+pnpm supabase functions deploy collect-order
+```
+
+Se hai già eseguito lo schema della v6, esegui anche `supabase/qr-pickup-migration.sql`.

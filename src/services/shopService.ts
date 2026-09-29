@@ -4,6 +4,7 @@ import {
   CustomerInfo,
   EventSettings,
   Product,
+  PickupOrderSummary,
   ProductVariant,
   ReservationResult,
   TeeSize,
@@ -168,8 +169,8 @@ export const createReservation = async (
     throw new Error(await readFunctionError(error));
   }
 
-  if (!data?.order_number || !data?.order_id) {
-    throw new Error('La prenotazione non ha restituito un codice valido. Riprova.');
+  if (!data?.order_number || !data?.order_id || !data?.pickup_token) {
+    throw new Error('La prenotazione non ha restituito un codice QR valido. Riprova.');
   }
 
   return {
@@ -177,7 +178,50 @@ export const createReservation = async (
     orderNumber: data.order_number,
     totalCents: data.total_cents,
     notificationSent: Boolean(data.notification_sent),
+    pickupToken: data.pickup_token,
   };
+};
+
+export const getPickupOrder = async (pickupToken: string): Promise<PickupOrderSummary> => {
+  const { data, error } = await supabase.functions.invoke('collect-order', {
+    body: {
+      action: 'status',
+      pickupToken,
+    },
+  });
+
+  if (error) {
+    throw new Error(await readFunctionError(error));
+  }
+
+  if (!data?.order) {
+    throw new Error('QR di ritiro non valido.');
+  }
+
+  return data.order as PickupOrderSummary;
+};
+
+export const collectPickupOrder = async (
+  pickupToken: string,
+  standPin: string,
+): Promise<PickupOrderSummary> => {
+  const { data, error } = await supabase.functions.invoke('collect-order', {
+    body: {
+      action: 'collect',
+      pickupToken,
+      standPin,
+    },
+  });
+
+  if (error) {
+    throw new Error(await readFunctionError(error));
+  }
+
+  if (!data?.order) {
+    throw new Error('Non è stato possibile aggiornare la prenotazione.');
+  }
+
+  return data.order as PickupOrderSummary;
 };
 
 export const subscribeInventory = (onChange: () => void): (() => void) => {

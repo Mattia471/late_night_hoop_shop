@@ -58,6 +58,8 @@ create table if not exists public.orders (
   status text not null default 'reserved' check (status in ('reserved', 'collected', 'cancelled')),
   pickup_method text not null default 'Ritiro e pagamento presso lo stand',
   personalization_free boolean not null default true,
+  pickup_token text not null unique default encode(gen_random_bytes(24), 'hex'),
+  collected_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -162,6 +164,7 @@ as $$
 declare
   v_order_id uuid;
   v_order_number text;
+  v_pickup_token text;
   v_name text := trim(coalesce(p_customer ->> 'nome', ''));
   v_surname text := trim(coalesce(p_customer ->> 'cognome', ''));
   v_phone text := trim(coalesce(p_customer ->> 'telefono', ''));
@@ -181,7 +184,8 @@ begin
   select jsonb_build_object(
     'order_id', o.id,
     'order_number', o.order_number,
-    'total_cents', o.total_cents
+    'total_cents', o.total_cents,
+    'pickup_token', o.pickup_token
   )
   into v_existing
   from public.orders as o
@@ -275,7 +279,7 @@ begin
     'Ritiro e pagamento esclusivamente presso lo stand',
     true
   )
-  returning id into v_order_id;
+  returning id, pickup_token into v_order_id, v_pickup_token;
 
   for v_item in
     select parsed.variant_id, sum(parsed.quantity)::integer as quantity
@@ -341,10 +345,67 @@ begin
   return jsonb_build_object(
     'order_id', v_order_id,
     'order_number', v_order_number,
-    'total_cents', v_total_cents
+    'total_cents', v_total_cents,
+    'pickup_token', v_pickup_token
   );
 end;
 $$;
+
+create or replace function public.collect_event_order(
+  p_pickup_token text
+)
+returns jsonb
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  v_order public.orders%rowtype;
+begin
+  if p_pickup_token is null or char_length(trim(p_pickup_token)) < 20 then
+    raise exception 'QR di ritiro non valido.';
+  end if;
+
+  select *
+  into v_order
+  from public.orders
+  where pickup_token = trim(p_pickup_token)
+  for update;
+
+  if not found then
+    raise exception 'Prenotazione non trovata.';
+  end if;
+
+  if v_order.status = 'cancelled' then
+    raise exception 'La prenotazione è stata annullata.';
+  end if;
+
+  if v_order.status = 'collected' then
+    return jsonb_build_object(
+      'order_id', v_order.id,
+      'order_number', v_order.order_number,
+      'status', v_order.status,
+      'collected_at', v_order.collected_at
+    );
+  end if;
+
+  update public.orders
+  set
+    status = 'collected',
+    collected_at = now()
+  where id = v_order.id;
+
+  return jsonb_build_object(
+    'order_id', v_order.id,
+    'order_number', v_order.order_number,
+    'status', 'collected',
+    'collected_at', now()
+  );
+end;
+$$;
+
+revoke all on function public.collect_event_order(text) from public, anon, authenticated;
+grant execute on function public.collect_event_order(text) to service_role;
 
 revoke all on function public.create_event_order(uuid, jsonb, jsonb) from public, anon, authenticated;
 grant execute on function public.create_event_order(uuid, jsonb, jsonb) to service_role;

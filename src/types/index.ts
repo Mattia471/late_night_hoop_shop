@@ -54,4 +54,26 @@ export interface ReservationResult {
   orderNumber: string;
   totalCents: number;
   notificationSent: boolean;
+  pickupToken: string;
+}
+
+export type OrderStatus = 'reserved' | 'collected' | 'cancelled';
+
+export interface PickupOrderItem {
+  productName: string;
+  color: string;
+  size: TeeSize;
+  quantity: number;
+  unitPriceCents: number;
+}
+
+export interface PickupOrderSummary {
+  orderNumber: string;
+  status: OrderStatus;
+  totalCents: number;
+  customerName: string;
+  customerSurname: string;
+  createdAt: string;
+  collectedAt: string | null;
+  items: PickupOrderItem[];
 }
